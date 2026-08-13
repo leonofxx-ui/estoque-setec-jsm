@@ -160,7 +160,7 @@ footer{border-top:1px solid var(--line);padding:20px 0;text-align:center;font-si
 // ---- Configuração do Supabase ----
 const SUPABASE_URL = "https://wmgudywwvfzzsjjshezv.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtZ3VkeXd3dmZ6enNqanNoZXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTcwMzEsImV4cCI6MjEwMjEzMzAzMX0.c6aeTOpeqOlcHjvZHmXXhya9VsWB-q1SR2oxiMEpO4s";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let disponivel = [];
 let terceiros = [];
@@ -168,8 +168,8 @@ let grupoAtivo = "ALL";
 let view = "grid";
 
 async function carregar(){
-  const { data: d1 } = await supabase.from("estoque").select("*");
-  const { data: d2 } = await supabase.from("estoque_terceiros").select("*");
+  const { data: d1 } = await sb.from("estoque").select("*");
+  const { data: d2 } = await sb.from("estoque_terceiros").select("*");
   disponivel = d1 || [];
   terceiros = d2 || [];
 
