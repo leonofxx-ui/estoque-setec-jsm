@@ -190,13 +190,29 @@ async function carregar(){
   render();
 }
 
+function nomeBaseProduto(produto){
+  // Remove o sufixo de CST no final do nome, ex: "ENGEO PLENO S (1X20LT) - 040" -> "ENGEO PLENO S (1X20LT)"
+  return produto.replace(/\s*-\s*\d{2,4}\s*$/, "").trim();
+}
+
 function agruparPorProduto(lista){
   const mapa = {};
   lista.forEach(r => {
-    if(!mapa[r.produto]) mapa[r.produto] = [];
-    mapa[r.produto].push(r);
+    const chave = nomeBaseProduto(r.produto);
+    if(!mapa[chave]) mapa[chave] = [];
+    mapa[chave].push(r);
   });
   return mapa;
+}
+
+function agruparPorEmpresa(regs){
+  // Soma as quantidades de diferentes CST do mesmo produto, por empresa
+  const porEmpresa = {};
+  regs.forEach(r => {
+    if(!porEmpresa[r.empresa]) porEmpresa[r.empresa] = 0;
+    porEmpresa[r.empresa] += Number(r.estoque_disponivel);
+  });
+  return porEmpresa;
 }
 
 function render(){
@@ -232,10 +248,12 @@ function render(){
   if(view === "grid"){
     content.innerHTML = `<div class="grid">` + nomes.map(nome => {
       const regs = porProduto[nome];
-      const total = regs.reduce((s,r)=>s+Number(r.estoque_disponivel),0);
+      const porEmpresa = agruparPorEmpresa(regs);
+      const empresasOrdenadas = Object.keys(porEmpresa).sort();
+      const total = empresasOrdenadas.reduce((s,e)=>s+porEmpresa[e],0);
       const grupo = regs[0].grupo;
-      const linhas = regs.map(r =>
-        `<div class="pc-empresa-row"><span>${r.empresa}</span><b>${fmt(r.estoque_disponivel)}</b></div>`
+      const linhas = empresasOrdenadas.map(e =>
+        `<div class="pc-empresa-row"><span>${e}</span><b>${fmt(porEmpresa[e])}</b></div>`
       ).join("");
       return `<div class="pcard">
         <div class="pc-top"><span class="pc-fab ${grupo==='JSM'?'jsm':''}">${grupo}</span></div>
@@ -249,12 +267,15 @@ function render(){
   } else {
     let rows = "";
     nomes.forEach(nome => {
-      porProduto[nome].forEach(r => {
+      const regs = porProduto[nome];
+      const porEmpresa = agruparPorEmpresa(regs);
+      const grupo = regs[0].grupo;
+      Object.keys(porEmpresa).sort().forEach(empresa => {
         rows += `<tr>
-          <td class="t-fab">${r.grupo}</td>
-          <td class="t-name">${r.produto}</td>
-          <td>${r.empresa}</td>
-          <td class="t-qtd">${fmt(r.estoque_disponivel)}</td>
+          <td class="t-fab">${grupo}</td>
+          <td class="t-name">${nome}</td>
+          <td>${empresa}</td>
+          <td class="t-qtd">${fmt(porEmpresa[empresa])}</td>
         </tr>`;
       });
     });
