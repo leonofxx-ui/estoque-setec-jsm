@@ -192,7 +192,11 @@ async function carregar(){
 
 function nomeBaseProduto(produto){
   // Remove o sufixo de CST no final do nome, ex: "ENGEO PLENO S (1X20LT) - 040" -> "ENGEO PLENO S (1X20LT)"
-  return produto.replace(/\s*-\s*\d{2,4}\s*$/, "").trim();
+  // e também quando vem com o princípio ativo depois, ex: "ACTARA 250 WG (4X5KG) - 540 - (TIAMETOXAM)"
+  return produto
+    .replace(/\s*-\s*\d{2,4}\s*-\s*\([^)]*\)\s*$/, "")
+    .replace(/\s*-\s*\d{2,4}\s*$/, "")
+    .trim();
 }
 
 function agruparPorProduto(lista){
@@ -296,10 +300,21 @@ function renderTerceiros(termo){
     content.innerHTML = `<div class="empty"><p>Nenhum item encontrado.</p></div>`;
     return;
   }
-  let rows = filtrado.map(r => `<tr>
-    <td class="t-name">${r.produto}</td>
-    <td>${r.depositante || '-'}</td>
-    <td class="t-qtd">${fmt(r.estoque_disponivel)} ${r.unidade||''}</td>
+
+  // Agrupa por (nome base do produto + depositante), somando as variações de CST
+  const mapa = {};
+  filtrado.forEach(r => {
+    const chave = nomeBaseProduto(r.produto) + "||" + (r.depositante || "-");
+    if(!mapa[chave]){
+      mapa[chave] = { nome: nomeBaseProduto(r.produto), depositante: r.depositante || "-", qtd: 0, unidade: r.unidade || "" };
+    }
+    mapa[chave].qtd += Number(r.estoque_disponivel);
+  });
+
+  let rows = Object.values(mapa).map(item => `<tr>
+    <td class="t-name">${item.nome}</td>
+    <td>${item.depositante}</td>
+    <td class="t-qtd">${fmt(item.qtd)} ${item.unidade}</td>
   </tr>`).join("");
   content.innerHTML = `<div class="tbl-wrap"><table>
     <thead><tr><th>Produto</th><th>Depositante</th><th>Quantidade</th></tr></thead>
