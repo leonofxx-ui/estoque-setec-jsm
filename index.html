@@ -174,8 +174,7 @@ async function carregar(){
   terceiros = d2 || [];
 
   if(disponivel.length){
-    document.getElementById("dataRef").textContent = disponivel[0].data_ref
-      ? new Date(disponivel[0].data_ref).toLocaleDateString('pt-BR') : '--/--/----';
+    document.getElementById("dataRef").textContent = formatarDataBR(disponivel[0].data_ref);
   }
   document.getElementById("statTerceiros").textContent = terceiros.length;
 
@@ -197,21 +196,6 @@ function nomeBaseProduto(produto){
     .replace(/\s*-\s*\d{2,4}\s*-\s*\([^)]*\)\s*$/, "")
     .replace(/\s*-\s*\d{2,4}\s*$/, "")
     .trim();
-}
-
-// Apelido dos depositantes, pelo código (o que vem antes do "-" no campo Depositante).
-// Pra adicionar um novo, só incluir uma linha "codigo": "nome" aqui embaixo.
-const NOMES_DEPOSITANTE = {
-  "781": "JSM DEPOSITO AEROPORTO",
-};
-
-function nomeDepositante(dep){
-  if(!dep) return dep;
-  const m = dep.match(/^(\d+)\s*-\s*/);
-  if(m && NOMES_DEPOSITANTE[m[1]]){
-    return `${m[1]} - ${NOMES_DEPOSITANTE[m[1]]}`;
-  }
-  return dep;
 }
 
 function agruparPorProduto(lista){
@@ -321,7 +305,7 @@ function renderTerceiros(termo){
   filtrado.forEach(r => {
     const chave = nomeBaseProduto(r.produto) + "||" + (r.depositante || "-");
     if(!mapa[chave]){
-      mapa[chave] = { nome: nomeBaseProduto(r.produto), depositante: nomeDepositante(r.depositante) || "-", qtd: 0, unidade: r.unidade || "" };
+      mapa[chave] = { nome: nomeBaseProduto(r.produto), depositante: r.depositante || "-", qtd: 0, unidade: r.unidade || "" };
     }
     mapa[chave].qtd += Number(r.estoque_disponivel);
   });
@@ -339,6 +323,16 @@ function renderTerceiros(termo){
 
 function fmt(n){
   return Number(n).toLocaleString('pt-BR', {maximumFractionDigits:0});
+}
+
+function formatarDataBR(isoDate){
+  // Converte "2026-08-18" -> "18/08/2026" sem passar pelo objeto Date,
+  // evitando o problema de fuso horário que faz a data "voltar" um dia.
+  if(!isoDate) return '--/--/----';
+  const partes = isoDate.split('-');
+  if(partes.length !== 3) return '--/--/----';
+  const [ano, mes, dia] = partes;
+  return `${dia}/${mes}/${ano}`;
 }
 
 document.querySelectorAll(".tab").forEach(btn => {
