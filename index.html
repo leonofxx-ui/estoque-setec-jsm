@@ -237,11 +237,12 @@ function nomeBaseProduto(produto){
 }
 
 function nomeDepositante(nome){
-  // A empresa 781 (JSM COMERCIO E REPRESENTACAO) é o depósito do aeroporto.
-  // Mostra um nome mais claro em vez do código/razão social original.
   if(!nome) return nome;
-  if(nome.trim().startsWith("781")) return "JSM DEPOSITO AEROPORTO";
-  return nome;
+  const trimmed = nome.trim();
+  // A empresa 781 (JSM COMERCIO E REPRESENTACAO) é o depósito do aeroporto.
+  if(trimmed.startsWith("781")) return "JSM DEPOSITO AEROPORTO";
+  // Para os demais, remove o código numérico do início (ex: "184 - BRAVO ARMAZENS GERAIS" -> "BRAVO ARMAZENS GERAIS")
+  return trimmed.replace(/^\d+\s*-\s*/, "");
 }
 
 function agruparPorProduto(lista){
