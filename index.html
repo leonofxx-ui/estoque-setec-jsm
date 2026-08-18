@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Setec / JSM — Consulta de Estoque</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<meta name="theme-color" content="#1f4a37">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231f4a37'/%3E%3Ctext x='50' y='64' font-family='Arial,sans-serif' font-size='40' font-weight='800' fill='white' text-anchor='middle'%3ESA%3C/text%3E%3C/svg%3E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Estoque Setec/JSM">
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Setec%2FJSM%20-%20Consulta%20de%20Estoque%22%2C%22short_name%22%3A%22Estoque%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23f6f4ec%22%2C%22theme_color%22%3A%22%231f4a37%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%3D%2527http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%2527%2520viewBox%3D%25270%25200%2520100%2520100%2527%253E%253Crect%2520width%3D%2527100%2527%2520height%3D%2527100%2527%2520rx%3D%252720%2527%2520fill%3D%2527%25231f4a37%2527%2F%253E%253Ctext%2520x%3D%252750%2527%2520y%3D%252764%2527%2520font-family%3D%2527Arial%2Csans-serif%2527%2520font-size%3D%252740%2527%2520font-weight%3D%2527800%2527%2520fill%3D%2527white%2527%2520text-anchor%3D%2527middle%2527%253ESA%253C%2Ftext%253E%253C%2Fsvg%253E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
 <style>
 :root{
   --ink:#12211a; --paper:#f6f4ec; --card:#ffffff;
@@ -103,6 +108,8 @@ tbody tr:last-child td{border-bottom:0}
 .sort-arrow{opacity:.4;font-size:10px;margin-left:4px}
 .sort-arrow.on{opacity:1}
 
+.pc-name mark, .t-name mark{background:var(--gold-soft);color:var(--leaf-dark);padding:0 2px;border-radius:3px;font-weight:800}
+
 .skeleton-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
 .skel-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;height:118px;position:relative;overflow:hidden}
 .skel-card::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(0,0,0,.04),transparent);animation:shimmer 1.3s infinite}
@@ -194,14 +201,66 @@ let ocultarZerados = false;
 let sortCampo = null;
 let sortDir = 1;
 
+const PREFS_KEY = "estoquePrefsSetecJSM";
+
+function salvarPrefs(){
+  try{
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      grupoAtivo, view, ocultarZerados,
+      empresa: document.getElementById("empresaSel").value
+    }));
+  }catch(e){ /* localStorage indisponível, ignora */ }
+}
+
+function carregarPrefs(){
+  try{
+    const salvo = localStorage.getItem(PREFS_KEY);
+    if(!salvo) return null;
+    return JSON.parse(salvo);
+  }catch(e){ return null; }
+}
+
+function aplicarPrefsIniciais(){
+  const prefs = carregarPrefs();
+  if(!prefs) return null;
+  if(prefs.grupoAtivo){
+    grupoAtivo = prefs.grupoAtivo;
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("on"));
+    const tabAlvo = document.querySelector(`.tab[data-grupo="${prefs.grupoAtivo}"]`);
+    if(tabAlvo) tabAlvo.classList.add("on");
+  }
+  if(prefs.view){
+    view = prefs.view;
+    document.getElementById("vGrid").classList.toggle("on", view === "grid");
+    document.getElementById("vTable").classList.toggle("on", view === "table");
+  }
+  if(prefs.ocultarZerados){
+    ocultarZerados = true;
+    document.getElementById("ocultarZerados").checked = true;
+  }
+  return prefs;
+}
+
 function skeletonGrid(qtd){
   let cards = "";
   for(let i=0;i<qtd;i++) cards += `<div class="skel-card"></div>`;
   return `<div class="skeleton-grid">${cards}</div>`;
 }
 
-async function carregar(){
-  document.getElementById("content").innerHTML = skeletonGrid(6);
+function escaparRegex(s){
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function destacar(texto, termo){
+  if(!termo) return texto;
+  const re = new RegExp(`(${escaparRegex(termo)})`, "ig");
+  return texto.replace(re, "<mark>$1</mark>");
+}
+
+async function carregar(mostrarSkeleton = true){
+  if(mostrarSkeleton){
+    document.getElementById("content").innerHTML = skeletonGrid(6);
+  }
 
   const { data: d1 } = await sb.from("estoque").select("*");
   const { data: d2 } = await sb.from("estoque_terceiros").select("*");
@@ -214,6 +273,7 @@ async function carregar(){
   document.getElementById("statTerceiros").textContent = terceiros.length;
 
   const empresaAtual = document.getElementById("empresaSel").value;
+  const empresaPref = window.__empresaPref;
   const empresas = [...new Set(disponivel.map(r => r.empresa))].sort();
   const empresaSel = document.getElementById("empresaSel");
   empresaSel.innerHTML = `<option value="ALL">Todas as empresas</option>`;
@@ -222,7 +282,9 @@ async function carregar(){
     opt.value = e; opt.textContent = e;
     empresaSel.appendChild(opt);
   });
-  if(empresas.includes(empresaAtual)) empresaSel.value = empresaAtual;
+  const alvoEmpresa = empresaPref || empresaAtual;
+  if(empresas.includes(alvoEmpresa)) empresaSel.value = alvoEmpresa;
+  window.__empresaPref = null;
 
   render();
 }
@@ -324,7 +386,7 @@ function render(){
           <span class="pc-fab ${grupo==='JSM'?'jsm':''}">${grupo}</span>
           ${total===0?'<span class="badge-zero">Sem estoque</span>':''}
         </div>
-        <div class="pc-name">${nome}</div>
+        <div class="pc-name">${destacar(nome, termo)}</div>
         <div class="pc-empresas">
           ${linhas}
           <div class="pc-total-row"><span class="lbl">Total</span><span class="val">${fmt(total)}</span></div>
@@ -346,7 +408,7 @@ function render(){
 
     let rows = linhas.map(l => `<tr class="${l.qtd===0?'zerado':''}">
       <td class="t-fab">${l.grupo}</td>
-      <td class="t-name">${l.produto}</td>
+      <td class="t-name">${destacar(l.produto, termo)}</td>
       <td>${l.empresa}</td>
       <td class="t-qtd">${fmt(l.qtd)}${l.qtd===0?' <span class="badge-zero">0</span>':''}</td>
     </tr>`).join("");
@@ -415,7 +477,7 @@ function renderTerceiros(termo){
   const linhas = ordenarLinhas(itens.map(item => ({ produto: item.nome, depositante: item.depositante, qtd: item.qtd, unidade: item.unidade })));
 
   let rows = linhas.map(item => `<tr class="${item.qtd===0?'zerado':''}">
-    <td class="t-name">${item.produto}</td>
+    <td class="t-name">${destacar(item.produto, termo)}</td>
     <td>${item.depositante}</td>
     <td class="t-qtd">${fmt(item.qtd)} ${item.unidade}${item.qtd===0?' <span class="badge-zero">0</span>':''}</td>
   </tr>`).join("");
@@ -456,13 +518,15 @@ document.querySelectorAll(".tab").forEach(btn => {
     document.querySelectorAll(".tab").forEach(b => b.classList.remove("on"));
     btn.classList.add("on");
     grupoAtivo = btn.dataset.grupo;
+    salvarPrefs();
     render();
   });
 });
 document.getElementById("q").addEventListener("input", render);
-document.getElementById("empresaSel").addEventListener("change", render);
+document.getElementById("empresaSel").addEventListener("change", () => { salvarPrefs(); render(); });
 document.getElementById("ocultarZerados").addEventListener("change", (e) => {
   ocultarZerados = e.target.checked;
+  salvarPrefs();
   render();
 });
 document.getElementById("btnRefresh").addEventListener("click", async () => {
@@ -471,10 +535,17 @@ document.getElementById("btnRefresh").addEventListener("click", async () => {
   await carregar();
   btn.classList.remove("spinning");
 });
-document.getElementById("vGrid").addEventListener("click", () => { view="grid"; document.getElementById("vGrid").classList.add("on"); document.getElementById("vTable").classList.remove("on"); render(); });
-document.getElementById("vTable").addEventListener("click", () => { view="table"; document.getElementById("vTable").classList.add("on"); document.getElementById("vGrid").classList.remove("on"); render(); });
+document.getElementById("vGrid").addEventListener("click", () => { view="grid"; document.getElementById("vGrid").classList.add("on"); document.getElementById("vTable").classList.remove("on"); salvarPrefs(); render(); });
+document.getElementById("vTable").addEventListener("click", () => { view="table"; document.getElementById("vTable").classList.add("on"); document.getElementById("vGrid").classList.remove("on"); salvarPrefs(); render(); });
+
+// Aplica os filtros salvos da última visita (aba, visualização, ocultar zerados, empresa)
+const prefsIniciais = aplicarPrefsIniciais();
+if(prefsIniciais && prefsIniciais.empresa) window.__empresaPref = prefsIniciais.empresa;
 
 carregar();
+
+// Atualiza os dados sozinho a cada 3 minutos, sem precisar clicar em nada
+setInterval(() => carregar(false), 3 * 60 * 1000);
 </script>
 </body>
 </html>
