@@ -236,6 +236,14 @@ function nomeBaseProduto(produto){
     .trim();
 }
 
+function nomeDepositante(nome){
+  // A empresa 781 (JSM COMERCIO E REPRESENTACAO) é o depósito do aeroporto.
+  // Mostra um nome mais claro em vez do código/razão social original.
+  if(!nome) return nome;
+  if(nome.trim().startsWith("781")) return "JSM DEPOSITO AEROPORTO";
+  return nome;
+}
+
 function agruparPorProduto(lista){
   const mapa = {};
   lista.forEach(r => {
@@ -383,9 +391,10 @@ function renderTerceiros(termo){
   // Agrupa por (nome base do produto + depositante), somando as variações de CST
   const mapa = {};
   filtrado.forEach(r => {
-    const chave = nomeBaseProduto(r.produto) + "||" + (r.depositante || "-");
+    const depositanteExibido = nomeDepositante(r.depositante) || "-";
+    const chave = nomeBaseProduto(r.produto) + "||" + depositanteExibido;
     if(!mapa[chave]){
-      mapa[chave] = { nome: nomeBaseProduto(r.produto), depositante: r.depositante || "-", qtd: 0, unidade: r.unidade || "" };
+      mapa[chave] = { nome: nomeBaseProduto(r.produto), depositante: depositanteExibido, qtd: 0, unidade: r.unidade || "" };
     }
     mapa[chave].qtd += Number(r.estoque_disponivel);
   });
