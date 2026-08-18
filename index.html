@@ -88,6 +88,26 @@ tbody tr:last-child td{border-bottom:0}
 .view-toggle button{border:0;background:#fff;padding:10px 14px;font-size:13px;cursor:pointer;color:var(--muted);font-weight:600}
 .view-toggle button.on{background:var(--leaf);color:#fff}
 
+.icon-btn{border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:0 12px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .15s}
+.icon-btn:hover{border-color:var(--leaf);color:var(--leaf)}
+.icon-btn.spinning svg{animation:spin .6s linear}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
+.hide-zero{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);font-weight:600;cursor:pointer;user-select:none;padding:0 4px}
+.hide-zero input{accent-color:var(--leaf);width:15px;height:15px;cursor:pointer}
+
+.zerado{opacity:.5}
+.zerado .pc-total-row .val{color:var(--muted)}
+.badge-zero{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--danger);background:var(--danger-soft);padding:2px 7px;border-radius:5px;margin-left:6px}
+
+.sort-arrow{opacity:.4;font-size:10px;margin-left:4px}
+.sort-arrow.on{opacity:1}
+
+.skeleton-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.skel-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;height:118px;position:relative;overflow:hidden}
+.skel-card::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(0,0,0,.04),transparent);animation:shimmer 1.3s infinite}
+@keyframes shimmer{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+
 footer{border-top:1px solid var(--line);padding:20px 0;text-align:center;font-size:12px;color:var(--muted)}
 
 @media(max-width:640px){
@@ -139,6 +159,10 @@ footer{border-top:1px solid var(--line);padding:20px 0;text-align:center;font-si
         <input id="q" type="text" placeholder="Buscar produto...">
       </div>
       <select id="empresaSel"><option value="ALL">Todas as empresas</option></select>
+      <label class="hide-zero"><input type="checkbox" id="ocultarZerados"> Ocultar zerados</label>
+      <button class="icon-btn" id="btnRefresh" title="Atualizar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
       <div class="view-toggle">
         <button id="vGrid" class="on">Cards</button>
         <button id="vTable">Tabela</button>
@@ -166,8 +190,19 @@ let disponivel = [];
 let terceiros = [];
 let grupoAtivo = "ALL";
 let view = "grid";
+let ocultarZerados = false;
+let sortCampo = null;
+let sortDir = 1;
+
+function skeletonGrid(qtd){
+  let cards = "";
+  for(let i=0;i<qtd;i++) cards += `<div class="skel-card"></div>`;
+  return `<div class="skeleton-grid">${cards}</div>`;
+}
 
 async function carregar(){
+  document.getElementById("content").innerHTML = skeletonGrid(6);
+
   const { data: d1 } = await sb.from("estoque").select("*");
   const { data: d2 } = await sb.from("estoque_terceiros").select("*");
   disponivel = d1 || [];
@@ -178,13 +213,16 @@ async function carregar(){
   }
   document.getElementById("statTerceiros").textContent = terceiros.length;
 
+  const empresaAtual = document.getElementById("empresaSel").value;
   const empresas = [...new Set(disponivel.map(r => r.empresa))].sort();
   const empresaSel = document.getElementById("empresaSel");
+  empresaSel.innerHTML = `<option value="ALL">Todas as empresas</option>`;
   empresas.forEach(e => {
     const opt = document.createElement("option");
     opt.value = e; opt.textContent = e;
     empresaSel.appendChild(opt);
   });
+  if(empresas.includes(empresaAtual)) empresaSel.value = empresaAtual;
 
   render();
 }
@@ -234,8 +272,22 @@ function render(){
     return true;
   });
 
-  const porProduto = agruparPorProduto(filtrado);
-  const nomes = Object.keys(porProduto).sort();
+  const porProdutoTudo = agruparPorProduto(filtrado);
+  let nomes = Object.keys(porProdutoTudo).sort();
+
+  // calcula o total de cada produto uma vez, pra usar no filtro e na ordenação
+  const totais = {};
+  nomes.forEach(nome => {
+    const porEmpresa = agruparPorEmpresa(porProdutoTudo[nome]);
+    totais[nome] = Object.values(porEmpresa).reduce((s,v)=>s+v,0);
+  });
+
+  if(ocultarZerados){
+    nomes = nomes.filter(nome => totais[nome] > 0);
+  }
+
+  const porProduto = {};
+  nomes.forEach(nome => porProduto[nome] = porProdutoTudo[nome]);
 
   document.getElementById("statProdutos").textContent = nomes.length;
   document.getElementById("countLine").innerHTML =
@@ -253,13 +305,16 @@ function render(){
       const regs = porProduto[nome];
       const porEmpresa = agruparPorEmpresa(regs);
       const empresasOrdenadas = Object.keys(porEmpresa).sort();
-      const total = empresasOrdenadas.reduce((s,e)=>s+porEmpresa[e],0);
+      const total = totais[nome];
       const grupo = regs[0].grupo;
       const linhas = empresasOrdenadas.map(e =>
         `<div class="pc-empresa-row"><span>${e}</span><b>${fmt(porEmpresa[e])}</b></div>`
       ).join("");
-      return `<div class="pcard">
-        <div class="pc-top"><span class="pc-fab ${grupo==='JSM'?'jsm':''}">${grupo}</span></div>
+      return `<div class="pcard ${total===0?'zerado':''}">
+        <div class="pc-top">
+          <span class="pc-fab ${grupo==='JSM'?'jsm':''}">${grupo}</span>
+          ${total===0?'<span class="badge-zero">Sem estoque</span>':''}
+        </div>
         <div class="pc-name">${nome}</div>
         <div class="pc-empresas">
           ${linhas}
@@ -268,37 +323,62 @@ function render(){
       </div>`;
     }).join("") + `</div>`;
   } else {
-    let rows = "";
+    let linhas = [];
     nomes.forEach(nome => {
       const regs = porProduto[nome];
       const porEmpresa = agruparPorEmpresa(regs);
       const grupo = regs[0].grupo;
       Object.keys(porEmpresa).sort().forEach(empresa => {
-        rows += `<tr>
-          <td class="t-fab">${grupo}</td>
-          <td class="t-name">${nome}</td>
-          <td>${empresa}</td>
-          <td class="t-qtd">${fmt(porEmpresa[empresa])}</td>
-        </tr>`;
+        linhas.push({ grupo, produto: nome, empresa, qtd: porEmpresa[empresa] });
       });
     });
+
+    linhas = ordenarLinhas(linhas);
+
+    let rows = linhas.map(l => `<tr class="${l.qtd===0?'zerado':''}">
+      <td class="t-fab">${l.grupo}</td>
+      <td class="t-name">${l.produto}</td>
+      <td>${l.empresa}</td>
+      <td class="t-qtd">${fmt(l.qtd)}${l.qtd===0?' <span class="badge-zero">0</span>':''}</td>
+    </tr>`).join("");
+
     content.innerHTML = `<div class="tbl-wrap"><table>
-      <thead><tr><th>Grupo</th><th>Produto</th><th>Empresa</th><th>Estoque</th></tr></thead>
+      <thead><tr>
+        ${cabecalhoOrdenavel("grupo","Grupo")}
+        ${cabecalhoOrdenavel("produto","Produto")}
+        ${cabecalhoOrdenavel("empresa","Empresa")}
+        ${cabecalhoOrdenavel("qtd","Estoque")}
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
+
+    document.querySelectorAll("th[data-campo]").forEach(th => {
+      th.addEventListener("click", () => {
+        const campo = th.dataset.campo;
+        if(sortCampo === campo){ sortDir = -sortDir; } else { sortCampo = campo; sortDir = 1; }
+        render();
+      });
+    });
   }
+}
+
+function cabecalhoOrdenavel(campo, label){
+  const ativo = sortCampo === campo;
+  const seta = ativo ? (sortDir === 1 ? "▲" : "▼") : "▲▼";
+  return `<th data-campo="${campo}">${label} <span class="sort-arrow ${ativo?'on':''}">${seta}</span></th>`;
+}
+
+function ordenarLinhas(linhas){
+  if(!sortCampo) return linhas;
+  return [...linhas].sort((a,b) => {
+    const va = a[sortCampo], vb = b[sortCampo];
+    if(typeof va === "number") return (va - vb) * sortDir;
+    return String(va).localeCompare(String(vb), 'pt-BR') * sortDir;
+  });
 }
 
 function renderTerceiros(termo){
   const filtrado = terceiros.filter(r => !termo || r.produto.toLowerCase().includes(termo));
-  document.getElementById("countLine").innerHTML =
-    `Exibindo <b>${filtrado.length}</b> item${filtrado.length===1?'':'ns'} armazenados com terceiros`;
-
-  const content = document.getElementById("content");
-  if(filtrado.length === 0){
-    content.innerHTML = `<div class="empty"><p>Nenhum item encontrado.</p></div>`;
-    return;
-  }
 
   // Agrupa por (nome base do produto + depositante), somando as variações de CST
   const mapa = {};
@@ -310,15 +390,41 @@ function renderTerceiros(termo){
     mapa[chave].qtd += Number(r.estoque_disponivel);
   });
 
-  let rows = Object.values(mapa).map(item => `<tr>
-    <td class="t-name">${item.nome}</td>
+  let itens = Object.values(mapa);
+  if(ocultarZerados) itens = itens.filter(item => item.qtd > 0);
+
+  document.getElementById("countLine").innerHTML =
+    `Exibindo <b>${itens.length}</b> item${itens.length===1?'':'ns'} armazenados com terceiros`;
+
+  const content = document.getElementById("content");
+  if(itens.length === 0){
+    content.innerHTML = `<div class="empty"><p>Nenhum item encontrado.</p></div>`;
+    return;
+  }
+
+  const linhas = ordenarLinhas(itens.map(item => ({ produto: item.nome, depositante: item.depositante, qtd: item.qtd, unidade: item.unidade })));
+
+  let rows = linhas.map(item => `<tr class="${item.qtd===0?'zerado':''}">
+    <td class="t-name">${item.produto}</td>
     <td>${item.depositante}</td>
-    <td class="t-qtd">${fmt(item.qtd)} ${item.unidade}</td>
+    <td class="t-qtd">${fmt(item.qtd)} ${item.unidade}${item.qtd===0?' <span class="badge-zero">0</span>':''}</td>
   </tr>`).join("");
   content.innerHTML = `<div class="tbl-wrap"><table>
-    <thead><tr><th>Produto</th><th>Depositante</th><th>Quantidade</th></tr></thead>
+    <thead><tr>
+      ${cabecalhoOrdenavel("produto","Produto")}
+      ${cabecalhoOrdenavel("depositante","Depositante")}
+      ${cabecalhoOrdenavel("qtd","Quantidade")}
+    </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
+
+  document.querySelectorAll("th[data-campo]").forEach(th => {
+    th.addEventListener("click", () => {
+      const campo = th.dataset.campo;
+      if(sortCampo === campo){ sortDir = -sortDir; } else { sortCampo = campo; sortDir = 1; }
+      render();
+    });
+  });
 }
 
 function fmt(n){
@@ -345,6 +451,16 @@ document.querySelectorAll(".tab").forEach(btn => {
 });
 document.getElementById("q").addEventListener("input", render);
 document.getElementById("empresaSel").addEventListener("change", render);
+document.getElementById("ocultarZerados").addEventListener("change", (e) => {
+  ocultarZerados = e.target.checked;
+  render();
+});
+document.getElementById("btnRefresh").addEventListener("click", async () => {
+  const btn = document.getElementById("btnRefresh");
+  btn.classList.add("spinning");
+  await carregar();
+  btn.classList.remove("spinning");
+});
 document.getElementById("vGrid").addEventListener("click", () => { view="grid"; document.getElementById("vGrid").classList.add("on"); document.getElementById("vTable").classList.remove("on"); render(); });
 document.getElementById("vTable").addEventListener("click", () => { view="table"; document.getElementById("vTable").classList.add("on"); document.getElementById("vGrid").classList.remove("on"); render(); });
 
