@@ -132,6 +132,30 @@
     font-weight:600; color:var(--texto-suave); cursor:pointer;
   }
   .check-confirmar input{width:auto; margin:0;}
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(15,24,20,.6); z-index:999;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .modal-card{
+    background:#fff; border-radius:20px 20px 0 0; width:100%; max-width:640px;
+    max-height:80vh; display:flex; flex-direction:column; padding:20px;
+    box-shadow:0 -8px 30px rgba(0,0,0,.2);
+  }
+  .modal-card h3{
+    margin:0 0 4px; font-size:16px; color:var(--verde-escuro); font-weight:800;
+  }
+  .modal-card .modal-sub{font-size:12.5px; color:var(--texto-suave); margin:0 0 12px;}
+  .modal-lista{overflow-y:auto; flex:1; border-top:1px solid var(--borda); margin-bottom:14px;}
+  .modal-item{
+    padding:10px 0; border-bottom:1px solid var(--borda); font-size:13.5px;
+    display:flex; justify-content:space-between;
+  }
+  .modal-item span{color:var(--texto-suave); font-size:12px;}
+  .modal-botoes{display:flex; gap:10px;}
+  .modal-botoes button{margin-top:0; flex:1;}
+  .modal-btn-voltar{background:var(--verde-escuro); color:#fff;}
+  .modal-btn-continuar{background:#f0f4f1; color:var(--texto-suave); box-shadow:none;}
 </style>
 </head>
 <body>
@@ -266,6 +290,14 @@ selectLoja.addEventListener('change', () => {
   esconderInfoSistema();
   validarFormulario();
   atualizarResumoDia();
+
+  // acompanha a loja escolhida pra conferência no filtro do painel de baixo
+  const filtroLoja = document.getElementById('filtro-loja');
+  if (filtroLoja.value !== selectLoja.value){
+    filtroLoja.value = selectLoja.value;
+    sessaoFinalizada = false;
+    carregarConferencias();
+  }
 });
 
 // lembrar preferência de pedir confirmação antes de salvar
@@ -521,6 +553,29 @@ async function carregarConferencias(){
 document.getElementById('filtro-loja').addEventListener('change', () => { sessaoFinalizada = false; carregarConferencias(); });
 document.getElementById('filtro-tipo').addEventListener('change', () => { sessaoFinalizada = false; carregarConferencias(); });
 
+// --- modal de aviso de produtos ainda não contados ---
+function mostrarModalFaltantes(faltantes){
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <h3>⚠️ ${faltantes.length} produto${faltantes.length === 1 ? '' : 's'} ainda não contado${faltantes.length === 1 ? '' : 's'}</h3>
+        <p class="modal-sub">Esses produtos existem no sistema pra essa loja mas ainda não foram contados hoje:</p>
+        <div class="modal-lista">
+          ${faltantes.map(f => `<div class="modal-item"><span>${f.produto}</span><span>${f.unidade || ''}</span></div>`).join('')}
+        </div>
+        <div class="modal-botoes">
+          <button class="modal-btn-voltar">Voltar e contar</button>
+          <button class="modal-btn-continuar">Gerar mesmo assim</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-btn-voltar').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.querySelector('.modal-btn-continuar').onclick = () => { overlay.remove(); resolve(true); };
+  });
+}
+
 // --- finalizar conferência: gerar PDF ---
 document.getElementById('btn-pdf').addEventListener('click', async () => {
   const loja = document.getElementById('filtro-loja').value;
@@ -545,6 +600,22 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     if (!dados.length){
       alert('Nenhuma conferência encontrada hoje para essa loja.');
       return;
+    }
+
+    // checa se falta contar algum produto que existe no sistema pra essa loja
+    const urlTodos = `${SUPABASE_URL}/rest/v1/estoque_fisico?loja=eq.${loja}&select=produto,unidade&order=produto`;
+    const respTodos = await fetch(urlTodos, { headers: headers() });
+    const todosProdutos = await respTodos.json();
+    const contadosHoje = new Set(dados.map(d => d.produto));
+    const faltantes = todosProdutos.filter(p => !contadosHoje.has(p.produto));
+
+    if (faltantes.length){
+      const prosseguir = await mostrarModalFaltantes(faltantes);
+      if (!prosseguir){
+        btn.disabled = false;
+        btn.textContent = '📄 Finalizar conferência (gerar PDF)';
+        return;
+      }
     }
 
     const conferente = dados[dados.length - 1].encarregado; // último a contar nessa loja hoje
@@ -671,6 +742,9 @@ async function mostrarUltimaAtualizacao(){
 mostrarUltimaAtualizacao();
 
 // inicializa
+if (selectLoja.value){
+  document.getElementById('filtro-loja').value = selectLoja.value;
+}
 validarFormulario();
 carregarConferencias();
 atualizarResumoDia();
