@@ -6,6 +6,8 @@
 <title>Conferência de Estoque | Setec / JSM</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
   :root{
     --verde-escuro:#0f3d2e;
@@ -86,6 +88,7 @@
   .btn-salvar{background:var(--verde-escuro); color:#fff;}
   .btn-salvar:disabled{background:#9fb3ab; cursor:not-allowed;}
   .btn-whats{background:#25d366; color:#fff;}
+  .btn-pdf{background:var(--dourado); color:#3a2f00;}
 
   .filtros{display:flex; gap:8px; margin-bottom:12px;}
   .filtros select{flex:1;}
@@ -185,6 +188,7 @@
 
     <div id="lista-conferencias"><div class="loading">Carregando...</div></div>
 
+    <button class="btn-pdf" id="btn-pdf">📄 Finalizar conferência (gerar PDF)</button>
     <button class="btn-whats" id="btn-whatsapp">Compartilhar divergências no WhatsApp</button>
   </div>
 
@@ -399,6 +403,107 @@ async function carregarConferencias(){
 
 document.getElementById('filtro-loja').addEventListener('change', carregarConferencias);
 document.getElementById('filtro-tipo').addEventListener('change', carregarConferencias);
+
+// --- finalizar conferência: gerar PDF ---
+document.getElementById('btn-pdf').addEventListener('click', async () => {
+  const loja = document.getElementById('filtro-loja').value;
+  if (!loja){
+    alert('Escolha uma loja no filtro acima antes de gerar o PDF.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-pdf');
+  btn.disabled = true;
+  btn.textContent = 'Gerando PDF...';
+
+  try {
+    // pega todas as conferências dessa loja feitas HOJE
+    const hoje = new Date();
+    const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&loja=eq.${loja}&criado_em=gte.${inicioDia}&order=produto.asc`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = await resp.json();
+
+    if (!dados.length){
+      alert('Nenhuma conferência encontrada hoje para essa loja.');
+      return;
+    }
+
+    const conferente = dados[dados.length - 1].encarregado; // último a contar nessa loja hoje
+    const dataFormatada = hoje.toLocaleDateString('pt-BR');
+    const empresa = dados[0].empresa;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    // --- cabeçalho ---
+    doc.setFillColor(15, 61, 46);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('Conferência de Estoque', 14, 12);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Loja: ${empresa}`, 14, 19);
+    doc.text(`Conferente: ${conferente}   |   Data: ${dataFormatada}`, 14, 25);
+
+    // --- resumo ---
+    const total = dados.length;
+    const divergentes = dados.filter(d => d.diferenca !== 0).length;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.text(`Total de itens conferidos: ${total}   |   Divergências: ${divergentes}`, 14, 36);
+
+    // --- tabela ---
+    const linhas = dados.map(d => {
+      let situacao;
+      if (d.diferenca === 0) situacao = 'OK';
+      else if (d.diferenca < 0) situacao = `FALTA ${Math.abs(d.diferenca)}`;
+      else situacao = `SOBRA ${d.diferenca}`;
+      return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, situacao];
+    });
+
+    doc.autoTable({
+      startY: 41,
+      head: [['Produto', 'Un', 'Sistema', 'Contado', 'Situação']],
+      body: linhas,
+      styles: { fontSize: 8.5, cellPadding: 2.2 },
+      headStyles: { fillColor: [15, 61, 46], textColor: 255 },
+      columnStyles: { 4: { fontStyle: 'bold' } },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4){
+          const texto = data.cell.raw;
+          if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
+          else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
+          else { data.cell.styles.textColor = [138, 109, 0]; }
+        }
+      }
+    });
+
+    const nomeArquivo = `conferencia_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
+    const pdfBlob = doc.output('blob');
+    const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
+
+    // no celular, abre direto o menu de compartilhar (WhatsApp etc). No PC, baixa o arquivo.
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })){
+      await navigator.share({
+        files: [pdfFile],
+        title: 'Conferência de Estoque',
+        text: `Conferência - ${empresa} - ${dataFormatada}`
+      });
+    } else {
+      doc.save(nomeArquivo);
+    }
+  } catch(e){
+    alert('Erro ao gerar o PDF. Tente de novo.');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📄 Finalizar conferência (gerar PDF)';
+  }
+});
 
 // --- compartilhar no whatsapp (só divergências, respeitando o filtro de loja atual) ---
 document.getElementById('btn-whatsapp').addEventListener('click', async () => {
