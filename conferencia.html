@@ -1,1 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Conferência de Estoque | Setec / JSM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --verde-escuro:#0f3d2e;
+    --verde:#1b5e42;
+    --dourado:#c9a227;
+    --dourado-claro:#e6c862;
+    --bg:#f4f6f5;
+    --card:#ffffff;
+    --texto:#1c2b24;
+    --texto-suave:#5b6b63;
+    --vermelho:#c0392b;
+    --verde-ok:#2e7d4f;
+    --borda:#e1e6e3;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:'Manrope',sans-serif; background:var(--bg); color:var(--texto);
+    padding-bottom:40px;
+  }
+  header{
+    background:linear-gradient(135deg,var(--verde-escuro),var(--verde));
+    padding:22px 18px 26px; color:#fff;
+    border-bottom:3px solid var(--dourado);
+  }
+  header .topo{display:flex; align-items:center; gap:12px;}
+  header .badge{
+    background:#fff; border-radius:14px; padding:6px 10px; font-weight:800;
+    color:var(--verde-escuro); font-size:14px; letter-spacing:.5px;
+  }
+  header h1{margin:10px 0 2px; font-size:20px; font-weight:800;}
+  header p{margin:0; font-size:13px; color:var(--dourado-claro); font-weight:600;}
 
+  .container{max-width:640px; margin:-14px auto 0; padding:0 14px;}
+
+  .card{
+    background:var(--card); border-radius:16px; padding:18px;
+    box-shadow:0 6px 20px rgba(15,61,46,.08); margin-bottom:16px;
+    border:1px solid var(--borda);
+  }
+  .card h2{font-size:15px; margin:0 0 12px; color:var(--verde-escuro); font-weight:800;}
+
+  label{display:block; font-size:12.5px; font-weight:700; color:var(--texto-suave); margin:10px 0 4px;}
+  input,select{
+    width:100%; padding:11px 12px; border-radius:10px; border:1.5px solid var(--borda);
+    font-family:inherit; font-size:14.5px; background:#fbfcfb; color:var(--texto);
+  }
+  input:focus,select:focus{outline:none; border-color:var(--verde);}
+
+  .linha2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+
+  #resultado-busca{
+    max-height:180px; overflow-y:auto; border-radius:10px; margin-top:4px;
+    display:none; border:1.5px solid var(--borda); background:#fff;
+  }
+  #resultado-busca div{padding:10px 12px; font-size:13.5px; cursor:pointer; border-bottom:1px solid var(--borda);}
+  #resultado-busca div:hover{background:#f0f4f1;}
+  #resultado-busca div:last-child{border-bottom:none;}
+
+  .info-sistema{
+    display:flex; justify-content:space-between; align-items:center;
+    background:#f0f4f1; border-radius:10px; padding:10px 12px; margin-top:10px;
+    font-size:13.5px; display:none;
+  }
+  .info-sistema b{color:var(--verde-escuro);}
+
+  .diferenca-box{
+    margin-top:10px; padding:12px; border-radius:10px; text-align:center;
+    font-weight:800; font-size:15px; display:none;
+  }
+  .diferenca-ok{background:#e6f4ea; color:var(--verde-ok);}
+  .diferenca-neg{background:#fdecea; color:var(--vermelho);}
+  .diferenca-pos{background:#fff6e0; color:#8a6d00;}
+
+  button{
+    width:100%; padding:13px; border:none; border-radius:12px; font-family:inherit;
+    font-weight:800; font-size:14.5px; cursor:pointer; margin-top:14px;
+  }
+  .btn-salvar{background:var(--verde-escuro); color:#fff;}
+  .btn-salvar:disabled{background:#9fb3ab; cursor:not-allowed;}
+  .btn-whats{background:#25d366; color:#fff;}
+
+  .filtros{display:flex; gap:8px; margin-bottom:12px;}
+  .filtros select{flex:1;}
+
+  .item-conf{
+    padding:12px 0; border-bottom:1px solid var(--borda); font-size:13.5px;
+  }
+  .item-conf:last-child{border-bottom:none;}
+  .item-conf .topo-item{display:flex; justify-content:space-between; font-weight:700; color:var(--verde-escuro);}
+  .item-conf .meta{color:var(--texto-suave); font-size:12px; margin-top:2px;}
+  .tag-dif{
+    display:inline-block; margin-top:6px; padding:3px 9px; border-radius:20px;
+    font-size:12px; font-weight:800;
+  }
+  .tag-ok{background:#e6f4ea; color:var(--verde-ok);}
+  .tag-falta{background:#fdecea; color:var(--vermelho);}
+  .tag-sobra{background:#fff6e0; color:#8a6d00;}
+
+  .vazio{text-align:center; color:var(--texto-suave); font-size:13.5px; padding:20px 0;}
+  .loading{text-align:center; padding:14px; color:var(--texto-suave); font-size:13px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="topo">
+    <div class="badge">SETEC<br>agro</div>
+    <div>
+      <h1>Conferência de Estoque</h1>
+      <p>Setec / JSM</p>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- FORMULÁRIO DE CONTAGEM -->
+  <div class="card">
+    <h2>Nova contagem</h2>
+
+    <label>Seu nome</label>
+    <input type="text" id="encarregado" placeholder="Digite seu nome">
+
+    <label>Loja</label>
+    <select id="loja">
+      <option value="">Selecione a loja</option>
+      <option value="001">001 - JSM Uberlândia</option>
+      <option value="002">002 - JSM Depósito Aeroporto</option>
+      <option value="003">003 - JSM Araguari</option>
+      <option value="004">004 - JSM Capinópolis</option>
+      <option value="005">005 - JSM Nova Ponte</option>
+      <option value="010">010 - Setec Uberlândia</option>
+      <option value="011">011 - Setec Araguari</option>
+      <option value="012">012 - Setec Capinópolis</option>
+      <option value="013">013 - Setec Nova Ponte</option>
+    </select>
+
+    <label>Produto</label>
+    <input type="text" id="busca-produto" placeholder="Digite para buscar o produto..." autocomplete="off">
+    <div id="resultado-busca"></div>
+
+    <div class="info-sistema" id="info-sistema">
+      <span>Estoque no sistema:</span>
+      <b id="qtd-sistema">-</b>
+    </div>
+
+    <label>Quantidade contada</label>
+    <input type="number" step="0.01" id="qtd-contada" placeholder="0">
+
+    <div class="diferenca-box" id="diferenca-box"></div>
+
+    <button class="btn-salvar" id="btn-salvar" disabled>Salvar contagem</button>
+  </div>
+
+  <!-- PAINEL COMPARTILHADO -->
+  <div class="card">
+    <h2>Conferências recentes (todas)</h2>
+
+    <div class="filtros">
+      <select id="filtro-loja">
+        <option value="">Todas as lojas</option>
+        <option value="001">001 - JSM Uberlândia</option>
+        <option value="002">002 - JSM Depósito Aeroporto</option>
+        <option value="003">003 - JSM Araguari</option>
+        <option value="004">004 - JSM Capinópolis</option>
+        <option value="005">005 - JSM Nova Ponte</option>
+        <option value="010">010 - Setec Uberlândia</option>
+        <option value="011">011 - Setec Araguari</option>
+        <option value="012">012 - Setec Capinópolis</option>
+        <option value="013">013 - Setec Nova Ponte</option>
+      </select>
+      <select id="filtro-tipo">
+        <option value="">Todas</option>
+        <option value="divergente">Só divergências</option>
+      </select>
+    </div>
+
+    <div id="lista-conferencias"><div class="loading">Carregando...</div></div>
+
+    <button class="btn-whats" id="btn-whatsapp">Compartilhar divergências no WhatsApp</button>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = "https://wmgudywwvfzzsjjshezv.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtZ3VkeXd3dmZ6enNqanNoZXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTcwMzEsImV4cCI6MjEwMjEzMzAzMX0.c6aeTOpeqOlcHjvZHmXXhya9VsWB-q1SR2oxiMEpO4s";
+
+const NOMES_LOJA = {
+  "001":"JSM Uberlândia","002":"JSM Depósito Aeroporto","003":"JSM Araguari",
+  "004":"JSM Capinópolis","005":"JSM Nova Ponte","010":"Setec Uberlândia",
+  "011":"Setec Araguari","012":"Setec Capinópolis","013":"Setec Nova Ponte"
+};
+
+function headers(){
+  return {
+    "apikey": SUPABASE_KEY,
+    "Authorization": `Bearer ${SUPABASE_KEY}`,
+    "Content-Type": "application/json"
+  };
+}
+
+// --- estado da contagem em andamento ---
+let produtoSelecionado = null; // {produto, unidade, quantidade}
+let debounceBusca = null;
+
+// lembrar nome do encarregado
+const inputEncarregado = document.getElementById('encarregado');
+inputEncarregado.value = localStorage.getItem('conf_encarregado') || '';
+inputEncarregado.addEventListener('input', () => {
+  localStorage.setItem('conf_encarregado', inputEncarregado.value);
+  validarFormulario();
+});
+
+const selectLoja = document.getElementById('loja');
+selectLoja.value = localStorage.getItem('conf_loja') || '';
+selectLoja.addEventListener('change', () => {
+  localStorage.setItem('conf_loja', selectLoja.value);
+  document.getElementById('busca-produto').value = '';
+  document.getElementById('resultado-busca').style.display = 'none';
+  produtoSelecionado = null;
+  esconderInfoSistema();
+  validarFormulario();
+});
+
+// --- busca de produto (autocomplete) ---
+const inputBusca = document.getElementById('busca-produto');
+const boxResultado = document.getElementById('resultado-busca');
+
+inputBusca.addEventListener('input', () => {
+  produtoSelecionado = null;
+  esconderInfoSistema();
+  validarFormulario();
+  clearTimeout(debounceBusca);
+  const termo = inputBusca.value.trim();
+  const loja = selectLoja.value;
+  if (!loja) { boxResultado.style.display='none'; return; }
+  if (termo.length < 2) { boxResultado.style.display='none'; return; }
+  debounceBusca = setTimeout(() => buscarProduto(termo, loja), 300);
+});
+
+async function buscarProduto(termo, loja){
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?loja=eq.${loja}&produto=ilike.*${encodeURIComponent(termo)}*&select=produto,unidade,quantidade&limit=15&order=produto`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = await resp.json();
+    if (!dados.length){
+      boxResultado.innerHTML = '<div style="color:#999;">Nenhum produto encontrado nessa loja</div>';
+      boxResultado.style.display = 'block';
+      return;
+    }
+    boxResultado.innerHTML = dados.map(p =>
+      `<div data-produto="${encodeURIComponent(p.produto)}" data-un="${p.unidade||''}" data-qtd="${p.quantidade}">${p.produto} <span style="color:#999;">(${p.unidade||''})</span></div>`
+    ).join('');
+    boxResultado.style.display = 'block';
+  } catch(e){
+    console.error(e);
+  }
+}
+
+boxResultado.addEventListener('click', (ev) => {
+  const alvo = ev.target.closest('div[data-produto]');
+  if (!alvo) return;
+  produtoSelecionado = {
+    produto: decodeURIComponent(alvo.dataset.produto),
+    unidade: alvo.dataset.un,
+    quantidade: parseFloat(alvo.dataset.qtd)
+  };
+  inputBusca.value = produtoSelecionado.produto;
+  boxResultado.style.display = 'none';
+  mostrarInfoSistema(produtoSelecionado.quantidade);
+  calcularDiferenca();
+  validarFormulario();
+});
+
+function mostrarInfoSistema(qtd){
+  document.getElementById('info-sistema').style.display = 'flex';
+  document.getElementById('qtd-sistema').textContent = qtd;
+}
+function esconderInfoSistema(){
+  document.getElementById('info-sistema').style.display = 'none';
+  document.getElementById('diferenca-box').style.display = 'none';
+}
+
+// --- diferença em tempo real ---
+const inputContada = document.getElementById('qtd-contada');
+inputContada.addEventListener('input', () => { calcularDiferenca(); validarFormulario(); });
+
+function calcularDiferenca(){
+  const box = document.getElementById('diferenca-box');
+  if (!produtoSelecionado || inputContada.value === ''){
+    box.style.display = 'none';
+    return;
+  }
+  const contada = parseFloat(inputContada.value) || 0;
+  const dif = contada - produtoSelecionado.quantidade;
+  box.style.display = 'block';
+  if (dif === 0){
+    box.className = 'diferenca-box diferenca-ok';
+    box.textContent = 'Bateu certinho ✓';
+  } else if (dif < 0){
+    box.className = 'diferenca-box diferenca-neg';
+    box.textContent = `Faltam ${Math.abs(dif)} ${produtoSelecionado.unidade||''}`;
+  } else {
+    box.className = 'diferenca-box diferenca-pos';
+    box.textContent = `Sobram ${dif} ${produtoSelecionado.unidade||''}`;
+  }
+}
+
+function validarFormulario(){
+  const ok = inputEncarregado.value.trim() && selectLoja.value &&
+             produtoSelecionado && inputContada.value !== '';
+  document.getElementById('btn-salvar').disabled = !ok;
+}
+
+// --- salvar contagem ---
+document.getElementById('btn-salvar').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+  try {
+    const corpo = {
+      encarregado: inputEncarregado.value.trim(),
+      loja: selectLoja.value,
+      empresa: NOMES_LOJA[selectLoja.value] || selectLoja.value,
+      produto: produtoSelecionado.produto,
+      unidade: produtoSelecionado.unidade,
+      quantidade_sistema: produtoSelecionado.quantidade,
+      quantidade_contada: parseFloat(inputContada.value)
+    };
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/conferencias`, {
+      method: 'POST',
+      headers: { ...headers(), 'Prefer': 'return=minimal' },
+      body: JSON.stringify(corpo)
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+
+    // limpa só o produto/quantidade, mantém nome e loja pra próxima contagem
+    inputBusca.value = '';
+    inputContada.value = '';
+    produtoSelecionado = null;
+    esconderInfoSistema();
+    carregarConferencias();
+  } catch(e){
+    alert('Erro ao salvar. Tente de novo.');
+    console.error(e);
+  } finally {
+    btn.textContent = 'Salvar contagem';
+    validarFormulario();
+  }
+});
+
+// --- painel de conferências recentes ---
+async function carregarConferencias(){
+  const lista = document.getElementById('lista-conferencias');
+  lista.innerHTML = '<div class="loading">Carregando...</div>';
+  try {
+    let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&order=criado_em.desc&limit=100`;
+    const loja = document.getElementById('filtro-loja').value;
+    if (loja) url += `&loja=eq.${loja}`;
+
+    const resp = await fetch(url, { headers: headers() });
+    let dados = await resp.json();
+
+    if (document.getElementById('filtro-tipo').value === 'divergente'){
+      dados = dados.filter(d => d.diferenca !== 0);
+    }
+
+    if (!dados.length){
+      lista.innerHTML = '<div class="vazio">Nenhuma conferência encontrada</div>';
+      return;
+    }
+
+    lista.innerHTML = dados.map(d => {
+      let tagClasse = 'tag-ok', tagTexto = 'Bateu certinho';
+      if (d.diferenca < 0){ tagClasse='tag-falta'; tagTexto = `Faltam ${Math.abs(d.diferenca)}`; }
+      else if (d.diferenca > 0){ tagClasse='tag-sobra'; tagTexto = `Sobram ${d.diferenca}`; }
+      const data = new Date(d.criado_em).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return `
+        <div class="item-conf">
+          <div class="topo-item"><span>${d.produto}</span><span>${d.quantidade_contada} ${d.unidade||''}</span></div>
+          <div class="meta">${d.empresa} · ${d.encarregado} · ${data}</div>
+          <span class="tag-dif ${tagClasse}">${tagTexto}</span>
+        </div>`;
+    }).join('');
+  } catch(e){
+    lista.innerHTML = '<div class="vazio">Erro ao carregar</div>';
+    console.error(e);
+  }
+}
+
+document.getElementById('filtro-loja').addEventListener('change', carregarConferencias);
+document.getElementById('filtro-tipo').addEventListener('change', carregarConferencias);
+
+// --- compartilhar no whatsapp (só divergências, respeitando o filtro de loja atual) ---
+document.getElementById('btn-whatsapp').addEventListener('click', async () => {
+  const loja = document.getElementById('filtro-loja').value;
+  let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&order=criado_em.desc&limit=200`;
+  if (loja) url += `&loja=eq.${loja}`;
+  const resp = await fetch(url, { headers: headers() });
+  const dados = (await resp.json()).filter(d => d.diferenca !== 0);
+
+  if (!dados.length){
+    alert('Nenhuma divergência para compartilhar.');
+    return;
+  }
+
+  let texto = `*Divergências de Estoque*${loja ? ' - ' + NOMES_LOJA[loja] : ''}\n\n`;
+  dados.forEach(d => {
+    const sinal = d.diferenca < 0 ? 'FALTA' : 'SOBRA';
+    texto += `• ${d.produto} (${d.empresa}): ${sinal} ${Math.abs(d.diferenca)} ${d.unidade||''}\n`;
+  });
+
+  const link = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+  window.open(link, '_blank');
+});
+
+// inicializa
+validarFormulario();
+carregarConferencias();
+</script>
+
+</body>
+</html>
