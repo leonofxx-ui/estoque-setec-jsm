@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Conferência de Estoque | Setec / JSM</title>
+<title>Estoque Mobile | Conferência de Estoque</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -34,20 +34,36 @@
   }
   header .topo{display:flex; align-items:center; gap:12px;}
   header .badge{
-    background:#fff; border-radius:14px; padding:6px 10px; font-weight:800;
-    color:var(--verde-escuro); font-size:14px; letter-spacing:.5px;
+    background:#fff; border-radius:14px; padding:6px 12px; display:flex;
+    align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,.15);
   }
-  header h1{margin:10px 0 2px; font-size:20px; font-weight:800;}
-  header p{margin:0; font-size:13px; color:var(--dourado-claro); font-weight:600;}
+  header .badge img{height:36px; display:block;}
+  header h1{margin:10px 0 1px; font-size:20px; font-weight:800; letter-spacing:-.2px;}
+  header p{margin:0; font-size:12.5px; color:var(--dourado-claro); font-weight:600;}
+  header .tagline{margin:2px 0 0; font-size:10.5px; color:rgba(255,255,255,.55); font-weight:500; letter-spacing:.3px;}
+  .atualizado{
+    text-align:center; font-size:11.5px; color:var(--texto-suave); margin:10px 0 -2px;
+  }
+  .resumo-dia{
+    display:none; background:linear-gradient(135deg,var(--verde-escuro),var(--verde));
+    color:#fff; border-radius:14px; padding:12px 16px; margin:12px 0 -2px;
+    font-size:13px; font-weight:700; text-align:center;
+    box-shadow:0 6px 16px rgba(15,61,46,.2);
+  }
+  .resumo-dia b{color:var(--dourado-claro); font-size:15px;}
+  mark{background:var(--dourado-claro); color:var(--verde-escuro); border-radius:3px; padding:0 1px;}
 
   .container{max-width:640px; margin:-14px auto 0; padding:0 14px;}
 
   .card{
-    background:var(--card); border-radius:16px; padding:18px;
-    box-shadow:0 6px 20px rgba(15,61,46,.08); margin-bottom:16px;
+    background:var(--card); border-radius:18px; padding:20px;
+    box-shadow:0 8px 24px rgba(15,61,46,.07); margin-bottom:16px;
     border:1px solid var(--borda);
   }
-  .card h2{font-size:15px; margin:0 0 12px; color:var(--verde-escuro); font-weight:800;}
+  .card h2{
+    font-size:14px; margin:0 0 14px; color:var(--verde-escuro); font-weight:800;
+    text-transform:uppercase; letter-spacing:.6px;
+  }
 
   label{display:block; font-size:12.5px; font-weight:700; color:var(--texto-suave); margin:10px 0 4px;}
   input,select{
@@ -84,11 +100,13 @@
   button{
     width:100%; padding:13px; border:none; border-radius:12px; font-family:inherit;
     font-weight:800; font-size:14.5px; cursor:pointer; margin-top:14px;
+    transition:transform .12s ease, box-shadow .12s ease;
   }
-  .btn-salvar{background:var(--verde-escuro); color:#fff;}
-  .btn-salvar:disabled{background:#9fb3ab; cursor:not-allowed;}
-  .btn-whats{background:#25d366; color:#fff;}
-  .btn-pdf{background:var(--dourado); color:#3a2f00;}
+  button:active{transform:scale(.98);}
+  .btn-salvar{background:var(--verde-escuro); color:#fff; box-shadow:0 4px 12px rgba(15,61,46,.25);}
+  .btn-salvar:disabled{background:#9fb3ab; cursor:not-allowed; box-shadow:none;}
+  .btn-whats{background:#25d366; color:#fff; box-shadow:0 4px 12px rgba(37,211,102,.3);}
+  .btn-pdf{background:var(--dourado); color:#3a2f00; box-shadow:0 4px 12px rgba(201,162,39,.3);}
 
   .filtros{display:flex; gap:8px; margin-bottom:12px;}
   .filtros select{flex:1;}
@@ -109,21 +127,29 @@
 
   .vazio{text-align:center; color:var(--texto-suave); font-size:13.5px; padding:20px 0;}
   .loading{text-align:center; padding:14px; color:var(--texto-suave); font-size:13px;}
+  .check-confirmar{
+    display:flex; align-items:center; gap:7px; margin-top:14px; font-size:12.5px;
+    font-weight:600; color:var(--texto-suave); cursor:pointer;
+  }
+  .check-confirmar input{width:auto; margin:0;}
 </style>
 </head>
 <body>
 
 <header>
   <div class="topo">
-    <div class="badge">SETEC<br>agro</div>
+    <div class="badge"><img src="logo.png" alt="Setec Agro"></div>
     <div>
-      <h1>Conferência de Estoque</h1>
+      <h1>Estoque Mobile</h1>
       <p>Setec / JSM</p>
+      <p class="tagline">Conferência de Estoque</p>
     </div>
   </div>
 </header>
 
 <div class="container">
+  <div class="atualizado" id="estoque-atualizado"></div>
+  <div class="resumo-dia" id="resumo-dia"></div>
 
   <!-- FORMULÁRIO DE CONTAGEM -->
   <div class="card">
@@ -159,6 +185,11 @@
     <input type="number" step="0.01" id="qtd-contada" placeholder="0">
 
     <div class="diferenca-box" id="diferenca-box"></div>
+
+    <label class="check-confirmar">
+      <input type="checkbox" id="check-confirmar" checked>
+      Pedir confirmação antes de salvar
+    </label>
 
     <button class="btn-salvar" id="btn-salvar" disabled>Salvar contagem</button>
   </div>
@@ -234,6 +265,14 @@ selectLoja.addEventListener('change', () => {
   produtoSelecionado = null;
   esconderInfoSistema();
   validarFormulario();
+  atualizarResumoDia();
+});
+
+// lembrar preferência de pedir confirmação antes de salvar
+const checkConfirmar = document.getElementById('check-confirmar');
+checkConfirmar.checked = localStorage.getItem('conf_pedir_confirmacao') !== 'false';
+checkConfirmar.addEventListener('change', () => {
+  localStorage.setItem('conf_pedir_confirmacao', checkConfirmar.checked);
 });
 
 // --- busca de produto (autocomplete) ---
@@ -252,6 +291,12 @@ inputBusca.addEventListener('input', () => {
   debounceBusca = setTimeout(() => buscarProduto(termo, loja), 300);
 });
 
+function destacarTermo(texto, termo){
+  if (!termo) return texto;
+  const escapado = termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return texto.replace(new RegExp(`(${escapado})`, 'gi'), '<mark>$1</mark>');
+}
+
 async function buscarProduto(termo, loja){
   try {
     const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?loja=eq.${loja}&produto=ilike.*${encodeURIComponent(termo)}*&select=produto,unidade,quantidade&limit=15&order=produto`;
@@ -263,7 +308,7 @@ async function buscarProduto(termo, loja){
       return;
     }
     boxResultado.innerHTML = dados.map(p =>
-      `<div data-produto="${encodeURIComponent(p.produto)}" data-un="${p.unidade||''}" data-qtd="${p.quantidade}">${p.produto} <span style="color:#999;">(${p.unidade||''})</span></div>`
+      `<div data-produto="${encodeURIComponent(p.produto)}" data-un="${p.unidade||''}" data-qtd="${p.quantidade}">${destacarTermo(p.produto, termo)} <span style="color:#999;">(${p.unidade||''})</span></div>`
     ).join('');
     boxResultado.style.display = 'block';
   } catch(e){
@@ -329,24 +374,64 @@ function validarFormulario(){
 // --- salvar contagem ---
 document.getElementById('btn-salvar').addEventListener('click', async () => {
   const btn = document.getElementById('btn-salvar');
+
+  // confirmação (se o checkbox estiver marcado)
+  if (checkConfirmar.checked){
+    const ok = confirm(`Confirma a contagem?\n\n${produtoSelecionado.produto}\nQuantidade: ${inputContada.value} ${produtoSelecionado.unidade||''}`);
+    if (!ok) return;
+  }
+
   btn.disabled = true;
   btn.textContent = 'Salvando...';
   try {
+    const loja = selectLoja.value;
+    const produto = produtoSelecionado.produto;
+
+    // checa se esse produto já foi contado hoje nessa loja
+    const hoje = new Date();
+    const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+    const urlCheck = `${SUPABASE_URL}/rest/v1/conferencias?select=id,quantidade_contada&loja=eq.${loja}&produto=eq.${encodeURIComponent(produto)}&criado_em=gte.${inicioDia}`;
+    const respCheck = await fetch(urlCheck, { headers: headers() });
+    const existentes = await respCheck.json();
+
     const corpo = {
       encarregado: inputEncarregado.value.trim(),
-      loja: selectLoja.value,
-      empresa: NOMES_LOJA[selectLoja.value] || selectLoja.value,
-      produto: produtoSelecionado.produto,
+      loja: loja,
+      empresa: NOMES_LOJA[loja] || loja,
+      produto: produto,
       unidade: produtoSelecionado.unidade,
       quantidade_sistema: produtoSelecionado.quantidade,
       quantidade_contada: parseFloat(inputContada.value)
     };
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/conferencias`, {
-      method: 'POST',
-      headers: { ...headers(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify(corpo)
-    });
-    if (!resp.ok) throw new Error(await resp.text());
+
+    if (existentes.length){
+      const anterior = existentes[0];
+      const substituir = confirm(`Você já contou "${produto}" hoje (${anterior.quantidade_contada} ${produtoSelecionado.unidade||''}).\n\nSubstituir pela nova contagem (${corpo.quantidade_contada})?`);
+      if (!substituir){
+        btn.textContent = 'Salvar contagem';
+        btn.disabled = false;
+        return;
+      }
+      // atualiza o registro existente em vez de criar um novo
+      const respUpd = await fetch(`${SUPABASE_URL}/rest/v1/conferencias?id=eq.${anterior.id}`, {
+        method: 'PATCH',
+        headers: { ...headers(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          encarregado: corpo.encarregado,
+          quantidade_sistema: corpo.quantidade_sistema,
+          quantidade_contada: corpo.quantidade_contada,
+          criado_em: new Date().toISOString()
+        })
+      });
+      if (!respUpd.ok) throw new Error(await respUpd.text());
+    } else {
+      const resp = await fetch(`${SUPABASE_URL}/rest/v1/conferencias`, {
+        method: 'POST',
+        headers: { ...headers(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify(corpo)
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+    }
 
     // limpa só o produto/quantidade, mantém nome e loja pra próxima contagem
     inputBusca.value = '';
@@ -355,6 +440,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
     esconderInfoSistema();
     sessaoFinalizada = false; // uma nova contagem foi salva, volta a mostrar o painel normalmente
     carregarConferencias();
+    atualizarResumoDia();
   } catch(e){
     alert('Erro ao salvar. Tente de novo.');
     console.error(e);
@@ -363,6 +449,29 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
     validarFormulario();
   }
 });
+
+// --- resumo do dia (loja selecionada no formulário de contagem) ---
+async function atualizarResumoDia(){
+  const box = document.getElementById('resumo-dia');
+  const loja = selectLoja.value;
+  if (!loja){ box.style.display = 'none'; return; }
+
+  try {
+    const hoje = new Date();
+    const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=diferenca&loja=eq.${loja}&criado_em=gte.${inicioDia}`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = await resp.json();
+
+    if (!dados.length){ box.style.display = 'none'; return; }
+
+    const divergentes = dados.filter(d => d.diferenca !== 0).length;
+    box.style.display = 'block';
+    box.innerHTML = `Hoje nessa loja: <b>${dados.length}</b> itens contados &nbsp;·&nbsp; <b>${divergentes}</b> divergência${divergentes === 1 ? '' : 's'}`;
+  } catch(e){
+    box.style.display = 'none';
+  }
+}
 
 // --- painel de conferências recentes ---
 async function carregarConferencias(){
@@ -547,9 +656,24 @@ document.getElementById('btn-whatsapp').addEventListener('click', async () => {
   window.open(link, '_blank');
 });
 
+// --- mostra quando o estoque_fisico foi atualizado pela última vez ---
+async function mostrarUltimaAtualizacao(){
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?select=atualizado_em&order=atualizado_em.desc&limit=1`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = await resp.json();
+    if (dados.length){
+      const data = new Date(dados[0].atualizado_em).toLocaleDateString('pt-BR');
+      document.getElementById('estoque-atualizado').textContent = `Estoque do sistema atualizado em ${data}`;
+    }
+  } catch(e){ /* silencioso, não é crítico */ }
+}
+mostrarUltimaAtualizacao();
+
 // inicializa
 validarFormulario();
 carregarConferencias();
+atualizarResumoDia();
 </script>
 
 </body>
