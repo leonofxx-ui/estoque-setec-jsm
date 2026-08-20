@@ -488,6 +488,12 @@ async function atualizarResumoDia(){
   const loja = selectLoja.value;
   if (!loja){ box.style.display = 'none'; return; }
 
+  if (sessaoFinalizada){
+    box.style.display = 'block';
+    box.innerHTML = `Conferência dessa loja finalizada hoje ✓`;
+    return;
+  }
+
   try {
     const hoje = new Date();
     const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
@@ -678,6 +684,7 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     // independentemente do usuário concluir ou cancelar o compartilhamento
     sessaoFinalizada = true;
     carregarConferencias();
+    atualizarResumoDia();
 
     // no celular, abre direto o menu de compartilhar (WhatsApp etc). No PC, baixa o arquivo.
     try {
