@@ -215,6 +215,7 @@ function headers(){
 // --- estado da contagem em andamento ---
 let produtoSelecionado = null; // {produto, unidade, quantidade}
 let debounceBusca = null;
+let sessaoFinalizada = false; // true logo após gerar o PDF, até a próxima contagem ser salva
 
 // lembrar nome do encarregado
 const inputEncarregado = document.getElementById('encarregado');
@@ -352,6 +353,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
     inputContada.value = '';
     produtoSelecionado = null;
     esconderInfoSistema();
+    sessaoFinalizada = false; // uma nova contagem foi salva, volta a mostrar o painel normalmente
     carregarConferencias();
   } catch(e){
     alert('Erro ao salvar. Tente de novo.');
@@ -365,6 +367,12 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
 // --- painel de conferências recentes ---
 async function carregarConferencias(){
   const lista = document.getElementById('lista-conferencias');
+
+  if (sessaoFinalizada){
+    lista.innerHTML = '<div class="vazio">Conferência finalizada. Inicie uma nova contagem para continuar.</div>';
+    return;
+  }
+
   lista.innerHTML = '<div class="loading">Carregando...</div>';
   try {
     let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&order=criado_em.desc&limit=100`;
@@ -401,8 +409,8 @@ async function carregarConferencias(){
   }
 }
 
-document.getElementById('filtro-loja').addEventListener('change', carregarConferencias);
-document.getElementById('filtro-tipo').addEventListener('change', carregarConferencias);
+document.getElementById('filtro-loja').addEventListener('change', () => { sessaoFinalizada = false; carregarConferencias(); });
+document.getElementById('filtro-tipo').addEventListener('change', () => { sessaoFinalizada = false; carregarConferencias(); });
 
 // --- finalizar conferência: gerar PDF ---
 document.getElementById('btn-pdf').addEventListener('click', async () => {
@@ -486,15 +494,26 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     const pdfBlob = doc.output('blob');
     const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
 
+    // o PDF já foi gerado com sucesso aqui, então finaliza a sessão
+    // independentemente do usuário concluir ou cancelar o compartilhamento
+    sessaoFinalizada = true;
+    carregarConferencias();
+
     // no celular, abre direto o menu de compartilhar (WhatsApp etc). No PC, baixa o arquivo.
-    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })){
-      await navigator.share({
-        files: [pdfFile],
-        title: 'Conferência de Estoque',
-        text: `Conferência - ${empresa} - ${dataFormatada}`
-      });
-    } else {
-      doc.save(nomeArquivo);
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })){
+        await navigator.share({
+          files: [pdfFile],
+          title: 'Conferência de Estoque',
+          text: `Conferência - ${empresa} - ${dataFormatada}`
+        });
+      } else {
+        doc.save(nomeArquivo);
+      }
+    } catch(shareErr){
+      // usuário cancelou o menu de compartilhar (AbortError) ou algo do tipo -
+      // o PDF já foi gerado certinho, então não é um erro real, só ignora
+      if (shareErr.name !== 'AbortError') console.error(shareErr);
     }
   } catch(e){
     alert('Erro ao gerar o PDF. Tente de novo.');
