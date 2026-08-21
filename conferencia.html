@@ -125,6 +125,14 @@
   .tag-falta{background:#fdecea; color:var(--vermelho);}
   .tag-sobra{background:#fff6e0; color:#8a6d00;}
 
+#lista-conferencias{
+    max-height:420px;
+    overflow-y:auto;
+    padding-right:4px;
+  }
+  #lista-conferencias::-webkit-scrollbar{width:6px;}
+  #lista-conferencias::-webkit-scrollbar-thumb{background:var(--borda); border-radius:10px;}
+
   .vazio{text-align:center; color:var(--texto-suave); font-size:13.5px; padding:20px 0;}
   .loading{text-align:center; padding:14px; color:var(--texto-suave); font-size:13px;}
   .check-confirmar{
@@ -250,6 +258,9 @@
 </div>
 
 <script>
+// ============================================================
+// Copie a MESMA URL e KEY já usadas no index.html (Estoque Mobile)
+// ============================================================
 const SUPABASE_URL = "https://wmgudywwvfzzsjjshezv.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtZ3VkeXd3dmZ6enNqanNoZXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTcwMzEsImV4cCI6MjEwMjEzMzAzMX0.c6aeTOpeqOlcHjvZHmXXhya9VsWB-q1SR2oxiMEpO4s";
 
@@ -272,7 +283,8 @@ let produtoSelecionado = null; // {produto, unidade, quantidade}
 let debounceBusca = null;
 
 // "finalizada" agora é persistido no localStorage por loja+dia, então
-// sobrevive a F5 / fechar e abrir o navegador de novo
+// sobrevive a F5 / fechar e abrir o navegador de novo (antes era só uma
+// variável em memória, que resetava sozinha ao recarregar a página)
 function chaveFinalizada(loja){
   const hoje = new Date();
   const dataStr = `${hoje.getFullYear()}-${hoje.getMonth()+1}-${hoje.getDate()}`;
@@ -308,6 +320,7 @@ selectLoja.addEventListener('change', () => {
   validarFormulario();
   atualizarResumoDia();
 
+  // acompanha a loja escolhida pra conferência no filtro do painel de baixo
   const filtroLoja = document.getElementById('filtro-loja');
   if (filtroLoja.value !== selectLoja.value){
     filtroLoja.value = selectLoja.value;
@@ -315,12 +328,14 @@ selectLoja.addEventListener('change', () => {
   }
 });
 
+// lembrar preferência de pedir confirmação antes de salvar
 const checkConfirmar = document.getElementById('check-confirmar');
 checkConfirmar.checked = localStorage.getItem('conf_pedir_confirmacao') !== 'false';
 checkConfirmar.addEventListener('change', () => {
   localStorage.setItem('conf_pedir_confirmacao', checkConfirmar.checked);
 });
 
+// --- busca de produto (autocomplete) ---
 const inputBusca = document.getElementById('busca-produto');
 const boxResultado = document.getElementById('resultado-busca');
 
@@ -385,6 +400,7 @@ function esconderInfoSistema(){
   document.getElementById('diferenca-box').style.display = 'none';
 }
 
+// --- diferença em tempo real ---
 const inputContada = document.getElementById('qtd-contada');
 inputContada.addEventListener('input', () => { calcularDiferenca(); validarFormulario(); });
 
@@ -415,9 +431,11 @@ function validarFormulario(){
   document.getElementById('btn-salvar').disabled = !ok;
 }
 
+// --- salvar contagem ---
 document.getElementById('btn-salvar').addEventListener('click', async () => {
   const btn = document.getElementById('btn-salvar');
 
+  // confirmação (se o checkbox estiver marcado)
   if (checkConfirmar.checked){
     const ok = confirm(`Confirma a contagem?\n\n${produtoSelecionado.produto}\nQuantidade: ${inputContada.value} ${produtoSelecionado.unidade||''}`);
     if (!ok) return;
@@ -429,6 +447,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
     const loja = selectLoja.value;
     const produto = produtoSelecionado.produto;
 
+    // checa se esse produto já foi contado hoje nessa loja
     const hoje = new Date();
     const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
     const urlCheck = `${SUPABASE_URL}/rest/v1/conferencias?select=id,quantidade_contada&loja=eq.${loja}&produto=eq.${encodeURIComponent(produto)}&criado_em=gte.${inicioDia}`;
@@ -453,6 +472,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
         btn.disabled = false;
         return;
       }
+      // atualiza o registro existente em vez de criar um novo
       const respUpd = await fetch(`${SUPABASE_URL}/rest/v1/conferencias?id=eq.${anterior.id}`, {
         method: 'PATCH',
         headers: { ...headers(), 'Prefer': 'return=minimal' },
@@ -473,11 +493,12 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
       if (!resp.ok) throw new Error(await resp.text());
     }
 
+    // limpa só o produto/quantidade, mantém nome e loja pra próxima contagem
     inputBusca.value = '';
     inputContada.value = '';
     produtoSelecionado = null;
     esconderInfoSistema();
-    desmarcarFinalizada(loja);
+    desmarcarFinalizada(loja); // uma nova contagem foi salva, volta a mostrar o painel normalmente
     carregarConferencias();
     atualizarResumoDia();
   } catch(e){
@@ -489,6 +510,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
   }
 });
 
+// --- resumo do dia (loja selecionada no formulário de contagem) ---
 async function atualizarResumoDia(){
   const box = document.getElementById('resumo-dia');
   const loja = selectLoja.value;
@@ -517,6 +539,7 @@ async function atualizarResumoDia(){
   }
 }
 
+// --- painel de conferências recentes ---
 async function carregarConferencias(){
   const lista = document.getElementById('lista-conferencias');
   const lojaFiltro = document.getElementById('filtro-loja').value;
@@ -565,6 +588,7 @@ async function carregarConferencias(){
 document.getElementById('filtro-loja').addEventListener('change', carregarConferencias);
 document.getElementById('filtro-tipo').addEventListener('change', carregarConferencias);
 
+// --- modal de aviso de produtos ainda não contados ---
 function mostrarModalFaltantes(faltantes){
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -587,6 +611,7 @@ function mostrarModalFaltantes(faltantes){
   });
 }
 
+// --- finalizar conferência: gerar PDF ---
 document.getElementById('btn-pdf').addEventListener('click', async () => {
   const loja = document.getElementById('filtro-loja').value;
   if (!loja){
@@ -599,6 +624,7 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
   btn.textContent = 'Gerando PDF...';
 
   try {
+    // pega todas as conferências dessa loja feitas HOJE
     const hoje = new Date();
     const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
 
@@ -611,6 +637,7 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
       return;
     }
 
+    // checa se falta contar algum produto que existe no sistema pra essa loja
     const urlTodos = `${SUPABASE_URL}/rest/v1/estoque_fisico?loja=eq.${loja}&select=produto,unidade&order=produto`;
     const respTodos = await fetch(urlTodos, { headers: headers() });
     const todosProdutos = await respTodos.json();
@@ -626,13 +653,14 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
       }
     }
 
-    const conferente = dados[dados.length - 1].encarregado;
+    const conferente = dados[dados.length - 1].encarregado; // último a contar nessa loja hoje
     const dataFormatada = hoje.toLocaleDateString('pt-BR');
     const empresa = dados[0].empresa;
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
+    // --- cabeçalho ---
     doc.setFillColor(15, 61, 46);
     doc.rect(0, 0, 210, 28, 'F');
     doc.setTextColor(255, 255, 255);
@@ -644,12 +672,14 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     doc.text(`Loja: ${empresa}`, 14, 19);
     doc.text(`Conferente: ${conferente}   |   Data: ${dataFormatada}`, 14, 25);
 
+    // --- resumo ---
     const total = dados.length;
     const divergentes = dados.filter(d => d.diferenca !== 0).length;
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
     doc.text(`Total de itens conferidos: ${total}   |   Divergências: ${divergentes}`, 14, 36);
 
+    // --- tabela ---
     const linhas = dados.map(d => {
       let situacao;
       if (d.diferenca === 0) situacao = 'OK';
@@ -679,10 +709,13 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     const pdfBlob = doc.output('blob');
     const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
 
+    // o PDF já foi gerado com sucesso aqui, então finaliza a sessão
+    // independentemente do usuário concluir ou cancelar o compartilhamento
     marcarFinalizada(loja);
     carregarConferencias();
     atualizarResumoDia();
 
+    // no celular, abre direto o menu de compartilhar (WhatsApp etc). No PC, baixa o arquivo.
     try {
       if (navigator.canShare && navigator.canShare({ files: [pdfFile] })){
         await navigator.share({
@@ -694,6 +727,8 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
         doc.save(nomeArquivo);
       }
     } catch(shareErr){
+      // usuário cancelou o menu de compartilhar (AbortError) ou algo do tipo -
+      // o PDF já foi gerado certinho, então não é um erro real, só ignora
       if (shareErr.name !== 'AbortError') console.error(shareErr);
     }
   } catch(e){
@@ -705,6 +740,7 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
   }
 });
 
+// --- compartilhar no whatsapp (só divergências, respeitando o filtro de loja atual) ---
 document.getElementById('btn-whatsapp').addEventListener('click', async () => {
   const loja = document.getElementById('filtro-loja').value;
   let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&order=criado_em.desc&limit=200`;
@@ -727,6 +763,7 @@ document.getElementById('btn-whatsapp').addEventListener('click', async () => {
   window.open(link, '_blank');
 });
 
+// --- mostra quando o estoque_fisico foi atualizado pela última vez ---
 async function mostrarUltimaAtualizacao(){
   try {
     const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?select=atualizado_em&order=atualizado_em.desc&limit=1`;
@@ -736,10 +773,11 @@ async function mostrarUltimaAtualizacao(){
       const data = new Date(dados[0].atualizado_em).toLocaleDateString('pt-BR');
       document.getElementById('estoque-atualizado').textContent = `Estoque do sistema atualizado em ${data}`;
     }
-  } catch(e){ }
+  } catch(e){ /* silencioso, não é crítico */ }
 }
 mostrarUltimaAtualizacao();
 
+// inicializa
 if (selectLoja.value){
   document.getElementById('filtro-loja').value = selectLoja.value;
 }
