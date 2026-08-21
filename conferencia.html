@@ -740,10 +740,13 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
   }
 });
 
-// --- compartilhar no whatsapp (só divergências, respeitando o filtro de loja atual) ---
+// --- compartilhar no whatsapp (só divergências de HOJE, respeitando o filtro de loja atual) ---
 document.getElementById('btn-whatsapp').addEventListener('click', async () => {
   const loja = document.getElementById('filtro-loja').value;
-  let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&order=criado_em.desc&limit=200`;
+  const hoje = new Date();
+  const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+
+  let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&criado_em=gte.${inicioDia}&order=criado_em.desc&limit=200`;
   if (loja) url += `&loja=eq.${loja}`;
   const resp = await fetch(url, { headers: headers() });
   const dados = (await resp.json()).filter(d => d.diferenca !== 0);
