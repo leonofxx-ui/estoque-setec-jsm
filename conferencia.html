@@ -270,7 +270,24 @@ function headers(){
 // --- estado da contagem em andamento ---
 let produtoSelecionado = null; // {produto, unidade, quantidade}
 let debounceBusca = null;
-let sessaoFinalizada = false; // true logo após gerar o PDF, até a próxima contagem ser salva
+
+// "finalizada" agora é persistido no localStorage por loja+dia, então
+// sobrevive a F5 / fechar e abrir o navegador de novo
+function chaveFinalizada(loja){
+  const hoje = new Date();
+  const dataStr = `${hoje.getFullYear()}-${hoje.getMonth()+1}-${hoje.getDate()}`;
+  return `conf_finalizada_${loja}_${dataStr}`;
+}
+function estaFinalizada(loja){
+  if (!loja) return false;
+  return localStorage.getItem(chaveFinalizada(loja)) === 'true';
+}
+function marcarFinalizada(loja){
+  localStorage.setItem(chaveFinalizada(loja), 'true');
+}
+function desmarcarFinalizada(loja){
+  localStorage.removeItem(chaveFinalizada(loja));
+}
 
 // lembrar nome do encarregado
 const inputEncarregado = document.getElementById('encarregado');
@@ -291,23 +308,19 @@ selectLoja.addEventListener('change', () => {
   validarFormulario();
   atualizarResumoDia();
 
-  // acompanha a loja escolhida pra conferência no filtro do painel de baixo
   const filtroLoja = document.getElementById('filtro-loja');
   if (filtroLoja.value !== selectLoja.value){
     filtroLoja.value = selectLoja.value;
-    sessaoFinalizada = false;
     carregarConferencias();
   }
 });
 
-// lembrar preferência de pedir confirmação antes de salvar
 const checkConfirmar = document.getElementById('check-confirmar');
 checkConfirmar.checked = localStorage.getItem('conf_pedir_confirmacao') !== 'false';
 checkConfirmar.addEventListener('change', () => {
   localStorage.setItem('conf_pedir_confirmacao', checkConfirmar.checked);
 });
 
-// --- busca de produto (autocomplete) ---
 const inputBusca = document.getElementById('busca-produto');
 const boxResultado = document.getElementById('resultado-busca');
 
@@ -372,7 +385,6 @@ function esconderInfoSistema(){
   document.getElementById('diferenca-box').style.display = 'none';
 }
 
-// --- diferença em tempo real ---
 const inputContada = document.getElementById('qtd-contada');
 inputContada.addEventListener('input', () => { calcularDiferenca(); validarFormulario(); });
 
@@ -403,11 +415,9 @@ function validarFormulario(){
   document.getElementById('btn-salvar').disabled = !ok;
 }
 
-// --- salvar contagem ---
 document.getElementById('btn-salvar').addEventListener('click', async () => {
   const btn = document.getElementById('btn-salvar');
 
-  // confirmação (se o checkbox estiver marcado)
   if (checkConfirmar.checked){
     const ok = confirm(`Confirma a contagem?\n\n${produtoSelecionado.produto}\nQuantidade: ${inputContada.value} ${produtoSelecionado.unidade||''}`);
     if (!ok) return;
@@ -419,7 +429,6 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
     const loja = selectLoja.value;
     const produto = produtoSelecionado.produto;
 
-    // checa se esse produto já foi contado hoje nessa loja
     const hoje = new Date();
     const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
     const urlCheck = `${SUPABASE_URL}/rest/v1/conferencias?select=id,quantidade_contada&loja=eq.${loja}&produto=eq.${encodeURIComponent(produto)}&criado_em=gte.${inicioDia}`;
@@ -444,7 +453,6 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
         btn.disabled = false;
         return;
       }
-      // atualiza o registro existente em vez de criar um novo
       const respUpd = await fetch(`${SUPABASE_URL}/rest/v1/conferencias?id=eq.${anterior.id}`, {
         method: 'PATCH',
         headers: { ...headers(), 'Prefer': 'return=minimal' },
@@ -465,12 +473,11 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
       if (!resp.ok) throw new Error(await resp.text());
     }
 
-    // limpa só o produto/quantidade, mantém nome e loja pra próxima contagem
     inputBusca.value = '';
     inputContada.value = '';
     produtoSelecionado = null;
     esconderInfoSistema();
-    sessaoFinalizada = false; // uma nova contagem foi salva, volta a mostrar o painel normalmente
+    desmarcarFinalizada(loja);
     carregarConferencias();
     atualizarResumoDia();
   } catch(e){
@@ -482,13 +489,12 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
   }
 });
 
-// --- resumo do dia (loja selecionada no formulário de contagem) ---
 async function atualizarResumoDia(){
   const box = document.getElementById('resumo-dia');
   const loja = selectLoja.value;
   if (!loja){ box.style.display = 'none'; return; }
 
-  if (sessaoFinalizada){
+  if (estaFinalizada(loja)){
     box.style.display = 'block';
     box.innerHTML = `Conferência dessa loja finalizada hoje ✓`;
     return;
@@ -511,11 +517,11 @@ async function atualizarResumoDia(){
   }
 }
 
-// --- painel de conferências recentes ---
 async function carregarConferencias(){
   const lista = document.getElementById('lista-conferencias');
+  const lojaFiltro = document.getElementById('filtro-loja').value;
 
-  if (sessaoFinalizada){
+  if (estaFinalizada(lojaFiltro)){
     lista.innerHTML = '<div class="vazio">Conferência finalizada. Inicie uma nova contagem para continuar.</div>';
     return;
   }
@@ -523,7 +529,7 @@ async function carregarConferencias(){
   lista.innerHTML = '<div class="loading">Carregando...</div>';
   try {
     let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&order=criado_em.desc&limit=100`;
-    const loja = document.getElementById('filtro-loja').value;
+    const loja = lojaFiltro;
     if (loja) url += `&loja=eq.${loja}`;
 
     const resp = await fetch(url, { headers: headers() });
@@ -556,10 +562,9 @@ async function carregarConferencias(){
   }
 }
 
-document.getElementById('filtro-loja').addEventListener('change', () => { sessaoFinalizada = false; carregarConferencias(); });
-document.getElementById('filtro-tipo').addEventListener('change', () => { sessaoFinalizada = false; carregarConferencias(); });
+document.getElementById('filtro-loja').addEventListener('change', carregarConferencias);
+document.getElementById('filtro-tipo').addEventListener('change', carregarConferencias);
 
-// --- modal de aviso de produtos ainda não contados ---
 function mostrarModalFaltantes(faltantes){
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -582,7 +587,6 @@ function mostrarModalFaltantes(faltantes){
   });
 }
 
-// --- finalizar conferência: gerar PDF ---
 document.getElementById('btn-pdf').addEventListener('click', async () => {
   const loja = document.getElementById('filtro-loja').value;
   if (!loja){
@@ -595,7 +599,6 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
   btn.textContent = 'Gerando PDF...';
 
   try {
-    // pega todas as conferências dessa loja feitas HOJE
     const hoje = new Date();
     const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
 
@@ -608,7 +611,6 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
       return;
     }
 
-    // checa se falta contar algum produto que existe no sistema pra essa loja
     const urlTodos = `${SUPABASE_URL}/rest/v1/estoque_fisico?loja=eq.${loja}&select=produto,unidade&order=produto`;
     const respTodos = await fetch(urlTodos, { headers: headers() });
     const todosProdutos = await respTodos.json();
@@ -624,14 +626,13 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
       }
     }
 
-    const conferente = dados[dados.length - 1].encarregado; // último a contar nessa loja hoje
+    const conferente = dados[dados.length - 1].encarregado;
     const dataFormatada = hoje.toLocaleDateString('pt-BR');
     const empresa = dados[0].empresa;
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
-    // --- cabeçalho ---
     doc.setFillColor(15, 61, 46);
     doc.rect(0, 0, 210, 28, 'F');
     doc.setTextColor(255, 255, 255);
@@ -643,14 +644,12 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     doc.text(`Loja: ${empresa}`, 14, 19);
     doc.text(`Conferente: ${conferente}   |   Data: ${dataFormatada}`, 14, 25);
 
-    // --- resumo ---
     const total = dados.length;
     const divergentes = dados.filter(d => d.diferenca !== 0).length;
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
     doc.text(`Total de itens conferidos: ${total}   |   Divergências: ${divergentes}`, 14, 36);
 
-    // --- tabela ---
     const linhas = dados.map(d => {
       let situacao;
       if (d.diferenca === 0) situacao = 'OK';
@@ -680,13 +679,10 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     const pdfBlob = doc.output('blob');
     const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
 
-    // o PDF já foi gerado com sucesso aqui, então finaliza a sessão
-    // independentemente do usuário concluir ou cancelar o compartilhamento
-    sessaoFinalizada = true;
+    marcarFinalizada(loja);
     carregarConferencias();
     atualizarResumoDia();
 
-    // no celular, abre direto o menu de compartilhar (WhatsApp etc). No PC, baixa o arquivo.
     try {
       if (navigator.canShare && navigator.canShare({ files: [pdfFile] })){
         await navigator.share({
@@ -698,8 +694,6 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
         doc.save(nomeArquivo);
       }
     } catch(shareErr){
-      // usuário cancelou o menu de compartilhar (AbortError) ou algo do tipo -
-      // o PDF já foi gerado certinho, então não é um erro real, só ignora
       if (shareErr.name !== 'AbortError') console.error(shareErr);
     }
   } catch(e){
@@ -711,7 +705,6 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
   }
 });
 
-// --- compartilhar no whatsapp (só divergências, respeitando o filtro de loja atual) ---
 document.getElementById('btn-whatsapp').addEventListener('click', async () => {
   const loja = document.getElementById('filtro-loja').value;
   let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&order=criado_em.desc&limit=200`;
@@ -734,7 +727,6 @@ document.getElementById('btn-whatsapp').addEventListener('click', async () => {
   window.open(link, '_blank');
 });
 
-// --- mostra quando o estoque_fisico foi atualizado pela última vez ---
 async function mostrarUltimaAtualizacao(){
   try {
     const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?select=atualizado_em&order=atualizado_em.desc&limit=1`;
@@ -744,11 +736,10 @@ async function mostrarUltimaAtualizacao(){
       const data = new Date(dados[0].atualizado_em).toLocaleDateString('pt-BR');
       document.getElementById('estoque-atualizado').textContent = `Estoque do sistema atualizado em ${data}`;
     }
-  } catch(e){ /* silencioso, não é crítico */ }
+  } catch(e){ }
 }
 mostrarUltimaAtualizacao();
 
-// inicializa
 if (selectLoja.value){
   document.getElementById('filtro-loja').value = selectLoja.value;
 }
