@@ -15,10 +15,10 @@
 <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%20%22Estoque%20Mobile%20-%20Setec%20/%20JSM%22%2C%20%22short_name%22%3A%20%22Estoque%20Mobile%22%2C%20%22start_url%22%3A%20%22.%22%2C%20%22display%22%3A%20%22standalone%22%2C%20%22background_color%22%3A%20%22%23f6f4ec%22%2C%20%22theme_color%22%3A%20%22%231f4a37%22%2C%20%22icons%22%3A%20%5B%7B%22src%22%3A%20%22data%3Aimage/svg%2Bxml%2C%253Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%20100%20100%27%253E%253Crect%20width%3D%27100%27%20height%3D%27100%27%20rx%3D%2720%27%20fill%3D%27%25231f4a37%27/%253E%253Ctext%20x%3D%2750%27%20y%3D%2764%27%20font-family%3D%27Arial%2Csans-serif%27%20font-size%3D%2734%27%20font-weight%3D%27800%27%20fill%3D%27white%27%20text-anchor%3D%27middle%27%253EEM%253C/text%253E%253C/svg%253E%22%2C%20%22sizes%22%3A%20%22192x192%22%2C%20%22type%22%3A%20%22image/svg%2Bxml%22%7D%5D%7D">
 <style>
 :root{
-  --ink:#12211a; --paper:#f6f4ec; --card:#ffffff;
-  --leaf:#2f6b4f; --leaf-dark:#1f4a37; --leaf-soft:#e5efe7;
-  --gold:#c8952b; --gold-soft:#f6ecd4;
-  --line:#e2ddce; --muted:#6d7a6f; --danger:#c0392b; --danger-soft:#fbe6e0;
+  --ink:#1c2b24; --paper:#f4f6f5; --card:#ffffff;
+  --leaf:#1b5e42; --leaf-dark:#0f3d2e; --leaf-soft:#e6f4ea;
+  --gold:#c9a227; --gold-light:#e6c862; --gold-soft:#f6ecd4;
+  --line:#e1e6e3; --muted:#5b6b63; --danger:#c0392b; --danger-soft:#fdecea;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--paper);color:var(--ink);line-height:1.4;-webkit-font-smoothing:antialiased}
@@ -29,8 +29,9 @@ header{background:linear-gradient(150deg,var(--leaf-dark),var(--leaf));backgroun
 .brand{display:flex;align-items:center;gap:16px}
 .logo-badge{background:#fdfcf8;border-radius:14px;padding:9px 14px;box-shadow:0 10px 24px rgba(0,0,0,.22),inset 0 0 0 1px rgba(0,0,0,.03);display:flex;align-items:center}
 .logo-badge img{height:38px;width:auto;display:block}
-.brand h1{font-family:"Manrope",sans-serif;font-size:23px;font-weight:800;letter-spacing:.2px}
-.brand .sub{font-size:12px;opacity:.85;font-weight:600;letter-spacing:1.2px;text-transform:uppercase}
+.brand h1{font-family:"Manrope",sans-serif;font-size:20px;font-weight:800;letter-spacing:-.2px;margin:10px 0 1px}
+.brand .sub{font-size:12.5px;font-weight:600;color:var(--gold-light)}
+.brand .tagline{margin:2px 0 0;font-size:10.5px;color:rgba(255,255,255,.55);font-weight:500;letter-spacing:.3px}
 .season{text-align:right}
 .season .safra{font-family:"Manrope",sans-serif;font-size:20px;font-weight:800;letter-spacing:.5px}
 .season .lbl{font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:2px}
@@ -139,6 +140,7 @@ footer{border-top:1px solid var(--line);padding:20px 0;text-align:center;font-si
         <div>
           <h1>Estoque Mobile</h1>
           <div class="sub">Setec / JSM</div>
+          <div class="tagline">Consulta Saldo Disponível</div>
         </div>
       </div>
       <div class="season">
@@ -294,8 +296,6 @@ async function carregar(mostrarSkeleton = true){
 }
 
 function nomeBaseProduto(produto){
-  // Remove o sufixo de CST no final do nome, ex: "ENGEO PLENO S (1X20LT) - 040" -> "ENGEO PLENO S (1X20LT)"
-  // e também quando vem com o princípio ativo depois, ex: "ACTARA 250 WG (4X5KG) - 540 - (TIAMETOXAM)"
   return produto
     .replace(/\s*-\s*\d{2,4}\s*-\s*\([^)]*\)\s*$/, "")
     .replace(/\s*-\s*\d{2,4}\s*$/, "")
@@ -305,9 +305,7 @@ function nomeBaseProduto(produto){
 function nomeDepositante(nome){
   if(!nome) return nome;
   const trimmed = nome.trim();
-  // A empresa 781 (JSM COMERCIO E REPRESENTACAO) é o depósito do aeroporto.
   if(trimmed.startsWith("781")) return "JSM DEPOSITO AEROPORTO";
-  // Para os demais, remove o código numérico do início (ex: "184 - BRAVO ARMAZENS GERAIS" -> "BRAVO ARMAZENS GERAIS")
   return trimmed.replace(/^\d+\s*-\s*/, "");
 }
 
@@ -322,7 +320,6 @@ function agruparPorProduto(lista){
 }
 
 function agruparPorEmpresa(regs){
-  // Soma as quantidades de diferentes CST do mesmo produto, por empresa
   const porEmpresa = {};
   regs.forEach(r => {
     if(!porEmpresa[r.empresa]) porEmpresa[r.empresa] = 0;
@@ -350,7 +347,6 @@ function render(){
   const porProdutoTudo = agruparPorProduto(filtrado);
   let nomes = Object.keys(porProdutoTudo).sort();
 
-  // calcula o total de cada produto uma vez, pra usar no filtro e na ordenação
   const totais = {};
   nomes.forEach(nome => {
     const porEmpresa = agruparPorEmpresa(porProdutoTudo[nome]);
@@ -455,7 +451,6 @@ function ordenarLinhas(linhas){
 function renderTerceiros(termo){
   const filtrado = terceiros.filter(r => !termo || r.produto.toLowerCase().includes(termo));
 
-  // Agrupa por (nome base do produto + depositante), somando as variações de CST
   const mapa = {};
   filtrado.forEach(r => {
     const depositanteExibido = nomeDepositante(r.depositante) || "-";
@@ -508,8 +503,6 @@ function fmt(n){
 }
 
 function formatarDataBR(isoDate){
-  // Converte "2026-08-18" -> "18/08/2026" sem passar pelo objeto Date,
-  // evitando o problema de fuso horário que faz a data "voltar" um dia.
   if(!isoDate) return '--/--/----';
   const partes = isoDate.split('-');
   if(partes.length !== 3) return '--/--/----';
@@ -542,13 +535,11 @@ document.getElementById("btnRefresh").addEventListener("click", async () => {
 document.getElementById("vGrid").addEventListener("click", () => { view="grid"; document.getElementById("vGrid").classList.add("on"); document.getElementById("vTable").classList.remove("on"); salvarPrefs(); render(); });
 document.getElementById("vTable").addEventListener("click", () => { view="table"; document.getElementById("vTable").classList.add("on"); document.getElementById("vGrid").classList.remove("on"); salvarPrefs(); render(); });
 
-// Aplica os filtros salvos da última visita (aba, visualização, ocultar zerados, empresa)
 const prefsIniciais = aplicarPrefsIniciais();
 if(prefsIniciais && prefsIniciais.empresa) window.__empresaPref = prefsIniciais.empresa;
 
 carregar();
 
-// Atualiza os dados sozinho a cada 3 minutos, sem precisar clicar em nada
 setInterval(() => carregar(false), 3 * 60 * 1000);
 </script>
 </body>
