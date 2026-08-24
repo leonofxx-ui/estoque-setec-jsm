@@ -112,6 +112,7 @@
   .btn-salvar{background:var(--verde-escuro); color:#fff; box-shadow:0 4px 12px rgba(15,61,46,.25);}
   .btn-salvar:disabled{background:#9fb3ab; cursor:not-allowed; box-shadow:none;}
   .btn-whats{background:#25d366; color:#fff; box-shadow:0 4px 12px rgba(37,211,102,.3);}
+  .btn-vencidos{background:var(--vermelho); color:#fff; box-shadow:0 4px 12px rgba(192,57,43,.3);}
   .btn-pdf{background:var(--dourado); color:#3a2f00; box-shadow:0 4px 12px rgba(201,162,39,.3);}
   .btn-recorrente{background:var(--verde-escuro); color:#fff; box-shadow:0 4px 12px rgba(15,61,46,.25); margin-top:0;}
 
@@ -285,7 +286,8 @@
     <div id="lista-conferencias"><div class="loading">Carregando...</div></div>
 
     <button class="btn-pdf" id="btn-pdf">📄 Finalizar conferência (gerar PDF)</button>
-    <button class="btn-whats" id="btn-whatsapp">Compartilhar divergências no WhatsApp</button>
+    <button class="btn-whats" id="btn-whatsapp" style="display:none;">Compartilhar divergências no WhatsApp</button>
+    <button class="btn-vencidos" id="btn-vencidos" style="display:none;">⚠️ Compartilhar vencidos no WhatsApp</button>
   </div>
 
   <!-- DIVERGÊNCIAS RECORRENTES -->
@@ -609,6 +611,8 @@ async function carregarConferencias(){
   const lista = document.getElementById('lista-conferencias');
   const lojaFiltro = document.getElementById('filtro-loja').value;
 
+  atualizarVisibilidadeAlertas(lojaFiltro);
+
   if (estaFinalizada(lojaFiltro)){
     lista.innerHTML = '<div class="vazio">Conferência finalizada. Inicie uma nova contagem para continuar.</div>';
     return;
@@ -653,6 +657,76 @@ async function carregarConferencias(){
 
 document.getElementById('filtro-loja').addEventListener('change', carregarConferencias);
 document.getElementById('filtro-tipo').addEventListener('change', carregarConferencias);
+
+// --- mostra/esconde os botões de compartilhar conforme existir ou não
+// divergência/vencido HOJE na loja filtrada, pra não poluir a tela em
+// dias normais ---
+async function atualizarVisibilidadeAlertas(loja){
+  const btnDivergencia = document.getElementById('btn-whatsapp');
+  const btnVencidos = document.getElementById('btn-vencidos');
+
+  if (!loja){
+    btnDivergencia.style.display = 'none';
+    btnVencidos.style.display = 'none';
+    return;
+  }
+
+  try {
+    const hoje = new Date();
+    const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=diferenca,validade&loja=eq.${loja}&criado_em=gte.${inicioDia}`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = await resp.json();
+
+    const hojeZerado = new Date();
+    hojeZerado.setHours(0, 0, 0, 0);
+
+    const temDivergencia = dados.some(d => d.diferenca !== 0);
+    const temVencido = dados.some(d => {
+      if (!d.validade) return false;
+      const dataValidade = new Date(d.validade + 'T00:00:00');
+      return dataValidade < hojeZerado;
+    });
+
+    btnDivergencia.style.display = temDivergencia ? 'block' : 'none';
+    btnVencidos.style.display = temVencido ? 'block' : 'none';
+  } catch(e){
+    console.error(e);
+  }
+}
+
+// --- compartilhar vencidos no whatsapp (só produtos vencidos de HOJE, respeitando o filtro de loja atual) ---
+document.getElementById('btn-vencidos').addEventListener('click', async () => {
+  const loja = document.getElementById('filtro-loja').value;
+  const hoje = new Date();
+  const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+
+  let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&criado_em=gte.${inicioDia}&order=criado_em.desc&limit=200`;
+  if (loja) url += `&loja=eq.${loja}`;
+  const resp = await fetch(url, { headers: headers() });
+  const dados = await resp.json();
+
+  const hojeZerado = new Date();
+  hojeZerado.setHours(0, 0, 0, 0);
+  const vencidos = dados.filter(d => {
+    if (!d.validade) return false;
+    return new Date(d.validade + 'T00:00:00') < hojeZerado;
+  });
+
+  if (!vencidos.length){
+    alert('Nenhum produto vencido para compartilhar.');
+    return;
+  }
+
+  let texto = `*⚠️ Produtos Vencidos*${loja ? ' - ' + NOMES_LOJA[loja] : ''}\n\n`;
+  vencidos.forEach(d => {
+    const dataValidade = new Date(d.validade + 'T00:00:00').toLocaleDateString('pt-BR');
+    texto += `• ${d.produto} (${d.empresa}): venceu em ${dataValidade}\n`;
+  });
+
+  const link = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+  window.open(link, '_blank');
+});
 
 // --- modal de aviso de produtos ainda não contados ---
 function mostrarModalFaltantes(faltantes){
@@ -755,22 +829,15 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     doc.text(`Total de itens conferidos: ${total}   |   Divergências: ${divergentes}   |   Vencidos: ${vencidosCount}`, 14, 36);
 
     // --- tabela ---
-    // guarda a cor/base de cada linha pra desenhar a situação em duas
-    // cores na mesma célula (o texto normal mantém a cor de sempre, e só
-    // o "(VENCIDO)" fica vermelho)
-    const situacoesInfo = [];
-
     const linhas = dados.map((d, i) => {
       const vencido = vencidoFlags[i];
 
-      let base, corBase;
-      if (d.diferenca === 0){ base = 'OK'; corBase = [46, 125, 79]; }
-      else if (d.diferenca < 0){ base = `FALTA ${Math.abs(d.diferenca)}`; corBase = [192, 57, 43]; }
-      else { base = `SOBRA ${d.diferenca}`; corBase = [138, 109, 0]; }
+      let situacao;
+      if (d.diferenca === 0) situacao = 'OK';
+      else if (d.diferenca < 0) situacao = `FALTA ${Math.abs(d.diferenca)}`;
+      else situacao = `SOBRA ${d.diferenca}`;
+      if (vencido) situacao += ' (VENCIDO)';
 
-      situacoesInfo.push({ base, corBase, vencido });
-
-      const situacao = vencido ? `${base} (VENCIDO)` : base;
       const validadeTxt = d.validade ? new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR') : '';
       return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, validadeTxt, situacao];
     });
@@ -784,27 +851,11 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
       columnStyles: { 5: { fontStyle: 'bold' } },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 5){
-          data.cell.text = []; // desenhado manualmente em didDrawCell (duas cores na mesma célula)
-        }
-      },
-      didDrawCell: (data) => {
-        if (data.section !== 'body' || data.column.index !== 5) return;
-        const info = situacoesInfo[data.row.index];
-        if (!info) return;
-
-        const x = data.cell.x + data.cell.padding('left');
-        const y = data.cell.y + data.cell.height / 2 + 2.6;
-
-        doc.setFont(undefined, 'bold');
-        doc.setFontSize(8.5);
-
-        doc.setTextColor(info.corBase[0], info.corBase[1], info.corBase[2]);
-        doc.text(info.base, x, y);
-
-        if (info.vencido){
-          const larguraBase = doc.getTextWidth(info.base);
-          doc.setTextColor(192, 57, 43);
-          doc.text(' (VENCIDO)', x + larguraBase, y);
+          const texto = data.cell.raw;
+          if (texto.includes('VENCIDO')){ data.cell.styles.textColor = [192, 57, 43]; }
+          else if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
+          else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
+          else { data.cell.styles.textColor = [138, 109, 0]; }
         }
       }
     });
