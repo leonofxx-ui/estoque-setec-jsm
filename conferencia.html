@@ -743,11 +743,19 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     doc.text(`Total de itens conferidos: ${total}   |   Divergências: ${divergentes}`, 14, 36);
 
     // --- tabela ---
+    const hojeZerado = new Date();
+    hojeZerado.setHours(0, 0, 0, 0);
+
     const linhas = dados.map(d => {
+      const dataValidade = d.validade ? new Date(d.validade + 'T00:00:00') : null;
+      const vencido = dataValidade && dataValidade < hojeZerado;
+
       let situacao;
       if (d.diferenca === 0) situacao = 'OK';
       else if (d.diferenca < 0) situacao = `FALTA ${Math.abs(d.diferenca)}`;
       else situacao = `SOBRA ${d.diferenca}`;
+      if (vencido) situacao += ' (VENCIDO)';
+
       const validadeTxt = d.validade ? new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR') : '';
       return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, validadeTxt, situacao];
     });
@@ -762,7 +770,8 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 5){
           const texto = data.cell.raw;
-          if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
+          if (texto.includes('VENCIDO')){ data.cell.styles.textColor = [192, 57, 43]; }
+          else if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
           else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
           else { data.cell.styles.textColor = [138, 109, 0]; }
         }
