@@ -280,14 +280,15 @@
       <select id="filtro-tipo">
         <option value="">Todas</option>
         <option value="divergente">Só divergências</option>
+        <option value="vencido">Só vencidos</option>
       </select>
     </div>
 
     <div id="lista-conferencias"><div class="loading">Carregando...</div></div>
 
     <button class="btn-pdf" id="btn-pdf">📄 Finalizar conferência (gerar PDF)</button>
-    <button class="btn-whats" id="btn-whatsapp" style="display:none;">Compartilhar divergências no WhatsApp</button>
-    <button class="btn-vencidos" id="btn-vencidos" style="display:none;">⚠️ Compartilhar vencidos no WhatsApp</button>
+    <button class="btn-whats" id="btn-relatorio-divergencias" style="display:none;">📋 Relatório de Divergências (gerar PDF)</button>
+    <button class="btn-vencidos" id="btn-relatorio-vencidos" style="display:none;">⚠️ Relatório de Vencidos (gerar PDF)</button>
   </div>
 
   <!-- DIVERGÊNCIAS RECORRENTES -->
@@ -627,8 +628,16 @@ async function carregarConferencias(){
     const resp = await fetch(url, { headers: headers() });
     let dados = await resp.json();
 
-    if (document.getElementById('filtro-tipo').value === 'divergente'){
+    const filtroTipo = document.getElementById('filtro-tipo').value;
+    if (filtroTipo === 'divergente'){
       dados = dados.filter(d => d.diferenca !== 0);
+    } else if (filtroTipo === 'vencido'){
+      const hojeZerado = new Date();
+      hojeZerado.setHours(0, 0, 0, 0);
+      dados = dados.filter(d => {
+        if (!d.validade) return false;
+        return new Date(d.validade + 'T00:00:00') < hojeZerado;
+      });
     }
 
     if (!dados.length){
@@ -662,8 +671,8 @@ document.getElementById('filtro-tipo').addEventListener('change', carregarConfer
 // divergência/vencido HOJE na loja filtrada, pra não poluir a tela em
 // dias normais ---
 async function atualizarVisibilidadeAlertas(loja){
-  const btnDivergencia = document.getElementById('btn-whatsapp');
-  const btnVencidos = document.getElementById('btn-vencidos');
+  const btnDivergencia = document.getElementById('btn-relatorio-divergencias');
+  const btnVencidos = document.getElementById('btn-relatorio-vencidos');
 
   if (!loja){
     btnDivergencia.style.display = 'none';
@@ -695,38 +704,126 @@ async function atualizarVisibilidadeAlertas(loja){
   }
 }
 
-// --- compartilhar vencidos no whatsapp (só produtos vencidos de HOJE, respeitando o filtro de loja atual) ---
-document.getElementById('btn-vencidos').addEventListener('click', async () => {
-  const loja = document.getElementById('filtro-loja').value;
-  const hoje = new Date();
-  const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
-
-  let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&criado_em=gte.${inicioDia}&order=criado_em.desc&limit=200`;
-  if (loja) url += `&loja=eq.${loja}`;
-  const resp = await fetch(url, { headers: headers() });
-  const dados = await resp.json();
-
+// --- funções auxiliares reutilizáveis pros três PDFs (conferência completa,
+// relatório de divergências, relatório de vencidos) ---
+function desenharTabelaSituacao(doc, dados, startY){
   const hojeZerado = new Date();
   hojeZerado.setHours(0, 0, 0, 0);
-  const vencidos = dados.filter(d => {
-    if (!d.validade) return false;
-    return new Date(d.validade + 'T00:00:00') < hojeZerado;
+
+  const linhas = dados.map(d => {
+    const dataValidade = d.validade ? new Date(d.validade + 'T00:00:00') : null;
+    const vencido = !!(dataValidade && dataValidade < hojeZerado);
+
+    let situacao;
+    if (d.diferenca === 0) situacao = 'OK';
+    else if (d.diferenca < 0) situacao = `FALTA ${Math.abs(d.diferenca)}`;
+    else situacao = `SOBRA ${d.diferenca}`;
+    if (vencido) situacao += ' (VENCIDO)';
+
+    const validadeTxt = d.validade ? new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR') : '';
+    return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, validadeTxt, situacao];
   });
 
-  if (!vencidos.length){
-    alert('Nenhum produto vencido para compartilhar.');
+  doc.autoTable({
+    startY,
+    head: [['Produto', 'Un', 'Sistema', 'Contado', 'Validade', 'Situação']],
+    body: linhas,
+    styles: { fontSize: 8.5, cellPadding: 2.2 },
+    headStyles: { fillColor: [15, 61, 46], textColor: 255 },
+    columnStyles: { 5: { fontStyle: 'bold' } },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 5){
+        const texto = data.cell.raw;
+        if (texto.includes('VENCIDO')){ data.cell.styles.textColor = [192, 57, 43]; }
+        else if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
+        else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
+        else { data.cell.styles.textColor = [138, 109, 0]; }
+      }
+    }
+  });
+}
+
+async function gerarPdfECompartilhar(doc, nomeArquivo, tituloCompartilhar){
+  const pdfBlob = doc.output('blob');
+  const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })){
+      await navigator.share({ files: [pdfFile], title: tituloCompartilhar, text: tituloCompartilhar });
+    } else {
+      doc.save(nomeArquivo);
+    }
+  } catch (shareErr){
+    // usuário cancelou o menu de compartilhar (AbortError) - o PDF já foi
+    // gerado certinho, então não é um erro real, só ignora
+    if (shareErr.name !== 'AbortError') console.error(shareErr);
+  }
+}
+
+// --- relatório de produtos vencidos (só HOJE, respeitando o filtro de loja atual) ---
+document.getElementById('btn-relatorio-vencidos').addEventListener('click', async () => {
+  const loja = document.getElementById('filtro-loja').value;
+  if (!loja){
+    alert('Escolha uma loja no filtro acima antes de gerar o PDF.');
     return;
   }
 
-  let texto = `*⚠️ Produtos Vencidos*${loja ? ' - ' + NOMES_LOJA[loja] : ''}\n\n`;
-  vencidos.forEach(d => {
-    const dataValidade = new Date(d.validade + 'T00:00:00').toLocaleDateString('pt-BR');
-    texto += `• ${d.produto} (${d.empresa}): venceu em ${dataValidade}\n`;
-  });
+  const btn = document.getElementById('btn-relatorio-vencidos');
+  btn.disabled = true;
+  btn.textContent = 'Gerando PDF...';
 
-  const link = `https://wa.me/?text=${encodeURIComponent(texto)}`;
-  window.open(link, '_blank');
+  try {
+    const hoje = new Date();
+    const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&loja=eq.${loja}&criado_em=gte.${inicioDia}&order=produto.asc`;
+    const resp = await fetch(url, { headers: headers() });
+    const dadosTodos = await resp.json();
+
+    const hojeZerado = new Date();
+    hojeZerado.setHours(0, 0, 0, 0);
+    const dados = dadosTodos.filter(d => {
+      if (!d.validade) return false;
+      return new Date(d.validade + 'T00:00:00') < hojeZerado;
+    });
+
+    if (!dados.length){
+      alert('Nenhum produto vencido encontrado hoje para essa loja.');
+      return;
+    }
+
+    const dataFormatada = hoje.toLocaleDateString('pt-BR');
+    const empresa = dados[0].empresa;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFillColor(192, 57, 43);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('Relatório de Vencidos', 14, 12);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Loja: ${empresa}`, 14, 19);
+    doc.text(`Data: ${dataFormatada}`, 14, 25);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.text(`Total de produtos vencidos: ${dados.length}`, 14, 36);
+
+    desenharTabelaSituacao(doc, dados, 41);
+
+    const nomeArquivo = `vencidos_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
+    await gerarPdfECompartilhar(doc, nomeArquivo, `Vencidos - ${empresa} - ${dataFormatada}`);
+  } catch(e){
+    alert('Erro ao gerar o PDF. Tente de novo.');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚠️ Relatório de Vencidos (gerar PDF)';
+  }
 });
+
 
 // --- modal de aviso de produtos ainda não contados ---
 function mostrarModalFaltantes(faltantes){
@@ -815,54 +912,21 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     // --- resumo ---
     const hojeZerado = new Date();
     hojeZerado.setHours(0, 0, 0, 0);
-
-    const vencidoFlags = dados.map(d => {
+    const vencidosCount = dados.filter(d => {
       const dataValidade = d.validade ? new Date(d.validade + 'T00:00:00') : null;
       return !!(dataValidade && dataValidade < hojeZerado);
-    });
+    }).length;
 
     const total = dados.length;
     const divergentes = dados.filter(d => d.diferenca !== 0).length;
-    const vencidosCount = vencidoFlags.filter(Boolean).length;
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
     doc.text(`Total de itens conferidos: ${total}   |   Divergências: ${divergentes}   |   Vencidos: ${vencidosCount}`, 14, 36);
 
     // --- tabela ---
-    const linhas = dados.map((d, i) => {
-      const vencido = vencidoFlags[i];
-
-      let situacao;
-      if (d.diferenca === 0) situacao = 'OK';
-      else if (d.diferenca < 0) situacao = `FALTA ${Math.abs(d.diferenca)}`;
-      else situacao = `SOBRA ${d.diferenca}`;
-      if (vencido) situacao += ' (VENCIDO)';
-
-      const validadeTxt = d.validade ? new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR') : '';
-      return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, validadeTxt, situacao];
-    });
-
-    doc.autoTable({
-      startY: 41,
-      head: [['Produto', 'Un', 'Sistema', 'Contado', 'Validade', 'Situação']],
-      body: linhas,
-      styles: { fontSize: 8.5, cellPadding: 2.2 },
-      headStyles: { fillColor: [15, 61, 46], textColor: 255 },
-      columnStyles: { 5: { fontStyle: 'bold' } },
-      didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 5){
-          const texto = data.cell.raw;
-          if (texto.includes('VENCIDO')){ data.cell.styles.textColor = [192, 57, 43]; }
-          else if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
-          else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
-          else { data.cell.styles.textColor = [138, 109, 0]; }
-        }
-      }
-    });
+    desenharTabelaSituacao(doc, dados, 41);
 
     const nomeArquivo = `conferencia_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
-    const pdfBlob = doc.output('blob');
-    const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
 
     // o PDF já foi gerado com sucesso aqui, então finaliza a sessão
     // independentemente do usuário concluir ou cancelar o compartilhamento
@@ -870,22 +934,7 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     carregarConferencias();
     atualizarResumoDia();
 
-    // no celular, abre direto o menu de compartilhar (WhatsApp etc). No PC, baixa o arquivo.
-    try {
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })){
-        await navigator.share({
-          files: [pdfFile],
-          title: 'Conferência de Estoque',
-          text: `Conferência - ${empresa} - ${dataFormatada}`
-        });
-      } else {
-        doc.save(nomeArquivo);
-      }
-    } catch(shareErr){
-      // usuário cancelou o menu de compartilhar (AbortError) ou algo do tipo -
-      // o PDF já foi gerado certinho, então não é um erro real, só ignora
-      if (shareErr.name !== 'AbortError') console.error(shareErr);
-    }
+    await gerarPdfECompartilhar(doc, nomeArquivo, `Conferência - ${empresa} - ${dataFormatada}`);
   } catch(e){
     alert('Erro ao gerar o PDF. Tente de novo.');
     console.error(e);
@@ -895,30 +944,62 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
   }
 });
 
-// --- compartilhar no whatsapp (só divergências de HOJE, respeitando o filtro de loja atual) ---
-document.getElementById('btn-whatsapp').addEventListener('click', async () => {
+// --- relatório de divergências (só HOJE, respeitando o filtro de loja atual) ---
+document.getElementById('btn-relatorio-divergencias').addEventListener('click', async () => {
   const loja = document.getElementById('filtro-loja').value;
-  const hoje = new Date();
-  const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
-
-  let url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&criado_em=gte.${inicioDia}&order=criado_em.desc&limit=200`;
-  if (loja) url += `&loja=eq.${loja}`;
-  const resp = await fetch(url, { headers: headers() });
-  const dados = (await resp.json()).filter(d => d.diferenca !== 0);
-
-  if (!dados.length){
-    alert('Nenhuma divergência para compartilhar.');
+  if (!loja){
+    alert('Escolha uma loja no filtro acima antes de gerar o PDF.');
     return;
   }
 
-  let texto = `*Divergências de Estoque*${loja ? ' - ' + NOMES_LOJA[loja] : ''}\n\n`;
-  dados.forEach(d => {
-    const sinal = d.diferenca < 0 ? 'FALTA' : 'SOBRA';
-    texto += `• ${d.produto} (${d.empresa}): ${sinal} ${Math.abs(d.diferenca)} ${d.unidade||''}\n`;
-  });
+  const btn = document.getElementById('btn-relatorio-divergencias');
+  btn.disabled = true;
+  btn.textContent = 'Gerando PDF...';
 
-  const link = `https://wa.me/?text=${encodeURIComponent(texto)}`;
-  window.open(link, '_blank');
+  try {
+    const hoje = new Date();
+    const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&loja=eq.${loja}&criado_em=gte.${inicioDia}&order=produto.asc`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = (await resp.json()).filter(d => d.diferenca !== 0);
+
+    if (!dados.length){
+      alert('Nenhuma divergência encontrada hoje para essa loja.');
+      return;
+    }
+
+    const dataFormatada = hoje.toLocaleDateString('pt-BR');
+    const empresa = dados[0].empresa;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFillColor(15, 61, 46);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('Relatório de Divergências', 14, 12);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Loja: ${empresa}`, 14, 19);
+    doc.text(`Data: ${dataFormatada}`, 14, 25);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.text(`Total de divergências: ${dados.length}`, 14, 36);
+
+    desenharTabelaSituacao(doc, dados, 41);
+
+    const nomeArquivo = `divergencias_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
+    await gerarPdfECompartilhar(doc, nomeArquivo, `Divergências - ${empresa} - ${dataFormatada}`);
+  } catch(e){
+    alert('Erro ao gerar o PDF. Tente de novo.');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📋 Relatório de Divergências (gerar PDF)';
+  }
 });
 
 // --- divergências recorrentes (histórico completo, agrupado por loja+produto) ---
