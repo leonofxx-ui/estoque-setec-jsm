@@ -706,6 +706,15 @@ async function atualizarVisibilidadeAlertas(loja){
 
 // --- funções auxiliares reutilizáveis pros três PDFs (conferência completa,
 // relatório de divergências, relatório de vencidos) ---
+function formatarQtd(valor){
+  // números de 1 a 9 ganham um zero na frente (01, 02... 09), pra ficar
+  // com dois dígitos igual os de 10 pra cima
+  if (Number.isInteger(valor) && valor >= 1 && valor <= 9){
+    return String(valor).padStart(2, '0');
+  }
+  return String(valor);
+}
+
 function desenharTabelaSituacao(doc, dados, startY){
   const hojeZerado = new Date();
   hojeZerado.setHours(0, 0, 0, 0);
@@ -716,26 +725,40 @@ function desenharTabelaSituacao(doc, dados, startY){
 
     let situacao;
     if (d.diferenca === 0) situacao = 'OK';
-    else if (d.diferenca < 0) situacao = `FALTA ${Math.abs(d.diferenca)}`;
-    else situacao = `SOBRA ${d.diferenca}`;
-    if (vencido) situacao += ' (VENCIDO)';
+    else if (d.diferenca < 0) situacao = `FALTA ${formatarQtd(Math.abs(d.diferenca))}`;
+    else situacao = `SOBRA ${formatarQtd(d.diferenca)}`;
 
+    // coluna própria e estreita só pro aviso de vencido, assim a coluna de
+    // Validade fica sempre alinhada (com ou sem aviso na linha)
+    const aviso = vencido ? '!' : '';
     const validadeTxt = d.validade ? new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR') : '';
-    return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, validadeTxt, situacao];
+    return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, aviso, validadeTxt, situacao];
   });
 
   doc.autoTable({
     startY,
-    head: [['Produto', 'Un', 'Sistema', 'Contado', 'Validade', 'Situação']],
+    head: [['Produto', 'Un', 'Sistema', 'Contado', '', 'Validade', 'Situação']],
     body: linhas,
     styles: { fontSize: 8.5, cellPadding: 2.2 },
     headStyles: { fillColor: [15, 61, 46], textColor: 255 },
-    columnStyles: { 5: { fontStyle: 'bold' } },
+    columnStyles: {
+      4: { halign: 'center', cellWidth: 8, fontStyle: 'bold' },
+      6: { fontStyle: 'bold' }
+    },
     didParseCell: (data) => {
-      if (data.section === 'body' && data.column.index === 5){
+      if (data.section !== 'body') return;
+
+      if (data.column.index === 4 && data.cell.raw === '!'){
+        data.cell.styles.textColor = [192, 57, 43];
+      }
+
+      if (data.column.index === 5 && data.row.raw[4] === '!'){
+        data.cell.styles.textColor = [192, 57, 43];
+      }
+
+      if (data.column.index === 6){
         const texto = data.cell.raw;
-        if (texto.includes('VENCIDO')){ data.cell.styles.textColor = [192, 57, 43]; }
-        else if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
+        if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
         else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
         else { data.cell.styles.textColor = [138, 109, 0]; }
       }
