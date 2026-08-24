@@ -243,6 +243,9 @@
     <label>Quantidade contada</label>
     <input type="number" step="0.01" id="qtd-contada" placeholder="0">
 
+    <label>Validade do produto <span style="font-weight:400; text-transform:none; letter-spacing:0;">(opcional)</span></label>
+    <input type="date" id="validade">
+
     <div class="diferenca-box" id="diferenca-box"></div>
 
     <label class="check-confirmar">
@@ -517,7 +520,8 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
       produto: produto,
       unidade: produtoSelecionado.unidade,
       quantidade_sistema: produtoSelecionado.quantidade,
-      quantidade_contada: parseFloat(inputContada.value)
+      quantidade_contada: parseFloat(inputContada.value),
+      validade: document.getElementById('validade').value || null
     };
 
     if (existentes.length){
@@ -536,6 +540,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
           encarregado: corpo.encarregado,
           quantidade_sistema: corpo.quantidade_sistema,
           quantidade_contada: corpo.quantidade_contada,
+          validade: corpo.validade,
           criado_em: new Date().toISOString()
         })
       });
@@ -549,9 +554,10 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
       if (!resp.ok) throw new Error(await resp.text());
     }
 
-    // limpa só o produto/quantidade, mantém nome e loja pra próxima contagem
+    // limpa só o produto/quantidade/validade, mantém nome e loja pra próxima contagem
     inputBusca.value = '';
     inputContada.value = '';
+    document.getElementById('validade').value = '';
     produtoSelecionado = null;
     esconderInfoSistema();
     desmarcarFinalizada(loja); // uma nova contagem foi salva, volta a mostrar o painel normalmente
@@ -628,10 +634,11 @@ async function carregarConferencias(){
       if (d.diferenca < 0){ tagClasse='tag-falta'; tagTexto = `Faltam ${Math.abs(d.diferenca)}`; }
       else if (d.diferenca > 0){ tagClasse='tag-sobra'; tagTexto = `Sobram ${d.diferenca}`; }
       const data = new Date(d.criado_em).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const validadeTxt = d.validade ? ` · validade ${new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR')}` : '';
       return `
         <div class="item-conf">
           <div class="topo-item"><span>${d.produto}</span><span>${d.quantidade_contada} ${d.unidade||''}</span></div>
-          <div class="meta">${d.empresa} · ${d.encarregado} · ${data}</div>
+          <div class="meta">${d.empresa} · ${d.encarregado} · ${data}${validadeTxt}</div>
           <span class="tag-dif ${tagClasse}">${tagTexto}</span>
         </div>`;
     }).join('');
@@ -741,18 +748,19 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
       if (d.diferenca === 0) situacao = 'OK';
       else if (d.diferenca < 0) situacao = `FALTA ${Math.abs(d.diferenca)}`;
       else situacao = `SOBRA ${d.diferenca}`;
-      return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, situacao];
+      const validadeTxt = d.validade ? new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR') : '';
+      return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, validadeTxt, situacao];
     });
 
     doc.autoTable({
       startY: 41,
-      head: [['Produto', 'Un', 'Sistema', 'Contado', 'Situação']],
+      head: [['Produto', 'Un', 'Sistema', 'Contado', 'Validade', 'Situação']],
       body: linhas,
       styles: { fontSize: 8.5, cellPadding: 2.2 },
       headStyles: { fillColor: [15, 61, 46], textColor: 255 },
-      columnStyles: { 4: { fontStyle: 'bold' } },
+      columnStyles: { 5: { fontStyle: 'bold' } },
       didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 4){
+        if (data.section === 'body' && data.column.index === 5){
           const texto = data.cell.raw;
           if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
           else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
