@@ -110,6 +110,19 @@
   .btn-salvar:disabled{background:#9fb3ab; cursor:not-allowed; box-shadow:none;}
   .btn-whats{background:#25d366; color:#fff; box-shadow:0 4px 12px rgba(37,211,102,.3);}
   .btn-pdf{background:var(--dourado); color:#3a2f00; box-shadow:0 4px 12px rgba(201,162,39,.3);}
+  .btn-recorrente{background:var(--verde-escuro); color:#fff; box-shadow:0 4px 12px rgba(15,61,46,.25); margin-top:0;}
+
+  .rec-item{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid var(--borda); font-size:13.5px;
+  }
+  .rec-item:last-child{border-bottom:none;}
+  .rec-item .rec-nome{font-weight:700; color:var(--texto);}
+  .rec-item .rec-meta{font-size:11.5px; color:var(--texto-suave); margin-top:2px;}
+  .rec-item .rec-count{
+    background:#fdecea; color:var(--vermelho); font-weight:800; font-size:13px;
+    padding:4px 10px; border-radius:20px; white-space:nowrap;
+  }
 
   .filtros{display:flex; gap:8px; margin-bottom:12px;}
   .filtros select{flex:1;}
@@ -191,7 +204,18 @@
     <h2>Nova contagem</h2>
 
     <label>Seu nome</label>
-    <input type="text" id="encarregado" placeholder="Digite seu nome">
+    <select id="encarregado">
+      <option value="">Selecione seu nome</option>
+      <option value="Adelio">Adelio</option>
+      <option value="Bruno">Bruno</option>
+      <option value="Eldes">Eldes</option>
+      <option value="Indigo">Indigo</option>
+      <option value="Kaique">Kaique</option>
+      <option value="Leopoldo">Leopoldo</option>
+      <option value="Paulo">Paulo</option>
+      <option value="__outro__">Outro (digitar nome)</option>
+    </select>
+    <input type="text" id="encarregado-outro" placeholder="Digite seu nome" style="display:none; margin-top:8px;">
 
     <label>Loja</label>
     <select id="loja">
@@ -258,6 +282,14 @@
     <button class="btn-whats" id="btn-whatsapp">Compartilhar divergências no WhatsApp</button>
   </div>
 
+  <!-- DIVERGÊNCIAS RECORRENTES -->
+  <div class="card">
+    <h2>Divergências recorrentes</h2>
+    <p style="font-size:12.5px; color:var(--texto-suave); margin:-8px 0 12px;">Produtos que mais divergiram ao longo do tempo</p>
+    <button class="btn-recorrente" id="btn-recorrente">🔎 Ver divergências recorrentes</button>
+    <div id="lista-recorrentes" style="display:none; margin-top:14px;"></div>
+  </div>
+
 </div>
 
 <script>
@@ -306,9 +338,30 @@ function desmarcarFinalizada(loja){
 
 // lembrar nome do encarregado
 const inputEncarregado = document.getElementById('encarregado');
-inputEncarregado.value = localStorage.getItem('conf_encarregado') || '';
-inputEncarregado.addEventListener('input', () => {
-  localStorage.setItem('conf_encarregado', inputEncarregado.value);
+const inputEncarregadoOutro = document.getElementById('encarregado-outro');
+
+function getNomeEncarregado(){
+  if (inputEncarregado.value === '__outro__') return inputEncarregadoOutro.value.trim();
+  return inputEncarregado.value;
+}
+
+const nomeSalvo = localStorage.getItem('conf_encarregado') || '';
+const opcoesConhecidas = ['Adelio','Bruno','Eldes','Indigo','Kaique','Leopoldo','Paulo'];
+if (nomeSalvo && opcoesConhecidas.includes(nomeSalvo)){
+  inputEncarregado.value = nomeSalvo;
+} else if (nomeSalvo){
+  inputEncarregado.value = '__outro__';
+  inputEncarregadoOutro.value = nomeSalvo;
+  inputEncarregadoOutro.style.display = 'block';
+}
+
+inputEncarregado.addEventListener('change', () => {
+  inputEncarregadoOutro.style.display = inputEncarregado.value === '__outro__' ? 'block' : 'none';
+  localStorage.setItem('conf_encarregado', getNomeEncarregado());
+  validarFormulario();
+});
+inputEncarregadoOutro.addEventListener('input', () => {
+  localStorage.setItem('conf_encarregado', getNomeEncarregado());
   validarFormulario();
 });
 
@@ -429,7 +482,7 @@ function calcularDiferenca(){
 }
 
 function validarFormulario(){
-  const ok = inputEncarregado.value.trim() && selectLoja.value &&
+  const ok = getNomeEncarregado() && selectLoja.value &&
              produtoSelecionado && inputContada.value !== '';
   document.getElementById('btn-salvar').disabled = !ok;
 }
@@ -458,7 +511,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
     const existentes = await respCheck.json();
 
     const corpo = {
-      encarregado: inputEncarregado.value.trim(),
+      encarregado: getNomeEncarregado(),
       loja: loja,
       empresa: NOMES_LOJA[loja] || loja,
       produto: produto,
@@ -767,6 +820,73 @@ document.getElementById('btn-whatsapp').addEventListener('click', async () => {
 
   const link = `https://wa.me/?text=${encodeURIComponent(texto)}`;
   window.open(link, '_blank');
+});
+
+// --- divergências recorrentes (histórico completo, agrupado por loja+produto) ---
+document.getElementById('btn-recorrente').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-recorrente');
+  const lista = document.getElementById('lista-recorrentes');
+
+  if (lista.style.display === 'block'){
+    lista.style.display = 'none';
+    btn.textContent = '🔎 Ver divergências recorrentes';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Carregando...';
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=loja,empresa,produto,unidade,diferenca,criado_em&diferenca=neq.0&order=criado_em.desc&limit=500`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = await resp.json();
+
+    if (!dados.length){
+      lista.innerHTML = '<div class="vazio">Nenhuma divergência registrada ainda.</div>';
+      lista.style.display = 'block';
+      btn.textContent = '🔎 Ver divergências recorrentes';
+      return;
+    }
+
+    const agrupado = {};
+    dados.forEach(d => {
+      const chave = `${d.loja}||${d.produto}`;
+      if (!agrupado[chave]){
+        agrupado[chave] = { empresa: d.empresa, produto: d.produto, unidade: d.unidade, count: 0, ultima: d.criado_em };
+      }
+      agrupado[chave].count += 1;
+      if (d.criado_em > agrupado[chave].ultima) agrupado[chave].ultima = d.criado_em;
+    });
+
+    const ranking = Object.values(agrupado)
+      .filter(item => item.count > 1) // só mostra o que já divergiu mais de uma vez
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+
+    if (!ranking.length){
+      lista.innerHTML = '<div class="vazio">Nenhum produto divergiu mais de uma vez ainda — bom sinal!</div>';
+    } else {
+      lista.innerHTML = ranking.map(item => {
+        const dataUlt = new Date(item.ultima).toLocaleDateString('pt-BR');
+        return `
+          <div class="rec-item">
+            <div>
+              <div class="rec-nome">${item.produto}</div>
+              <div class="rec-meta">${item.empresa} · última vez em ${dataUlt}</div>
+            </div>
+            <span class="rec-count">${item.count}x</span>
+          </div>`;
+      }).join('');
+    }
+
+    lista.style.display = 'block';
+    btn.textContent = '🔎 Ocultar divergências recorrentes';
+  } catch(e){
+    lista.innerHTML = '<div class="vazio">Erro ao carregar</div>';
+    lista.style.display = 'block';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // --- mostra quando o estoque_fisico foi atualizado pela última vez ---
