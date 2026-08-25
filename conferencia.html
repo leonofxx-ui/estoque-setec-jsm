@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -651,7 +650,19 @@ async function carregarConferencias(){
       if (d.diferenca < 0){ tagClasse='tag-falta'; tagTexto = `Faltam ${Math.abs(d.diferenca)}`; }
       else if (d.diferenca > 0){ tagClasse='tag-sobra'; tagTexto = `Sobram ${d.diferenca}`; }
       const data = new Date(d.criado_em).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-      const validadeTxt = d.validade ? ` · validade ${new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR')}` : '';
+
+      let validadeTxt = '';
+      if (d.validade){
+        const hojeZerado = new Date();
+        hojeZerado.setHours(0, 0, 0, 0);
+        const dataValidade = new Date(d.validade + 'T00:00:00');
+        const vencido = dataValidade < hojeZerado;
+        const dataFmt = dataValidade.toLocaleDateString('pt-BR');
+        validadeTxt = vencido
+          ? ` · validade <span style="color:var(--vermelho); font-weight:700;">${dataFmt}</span>`
+          : ` · validade ${dataFmt}`;
+      }
+
       return `
         <div class="item-conf">
           <div class="topo-item"><span>${d.produto}</span><span>${d.quantidade_contada} ${d.unidade||''}</span></div>
