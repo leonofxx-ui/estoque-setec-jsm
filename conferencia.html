@@ -593,15 +593,23 @@ async function atualizarResumoDia(){
   try {
     const hoje = new Date();
     const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
-    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=diferenca&loja=eq.${loja}&criado_em=gte.${inicioDia}`;
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=diferenca,validade&loja=eq.${loja}&criado_em=gte.${inicioDia}`;
     const resp = await fetch(url, { headers: headers() });
     const dados = await resp.json();
 
     if (!dados.length){ box.style.display = 'none'; return; }
 
+    const hojeZerado = new Date();
+    hojeZerado.setHours(0, 0, 0, 0);
+
     const divergentes = dados.filter(d => d.diferenca !== 0).length;
+    const vencidos = dados.filter(d => {
+      if (!d.validade) return false;
+      return new Date(d.validade + 'T00:00:00') < hojeZerado;
+    }).length;
+
     box.style.display = 'block';
-    box.innerHTML = `Hoje nessa loja: <b>${dados.length}</b> itens contados &nbsp;·&nbsp; <b>${divergentes}</b> divergência${divergentes === 1 ? '' : 's'}`;
+    box.innerHTML = `Hoje nessa loja: <b>${dados.length}</b> itens contados &nbsp;·&nbsp; <b>${divergentes}</b> divergência${divergentes === 1 ? '' : 's'} &nbsp;·&nbsp; <b>${vencidos}</b> vencido${vencidos === 1 ? '' : 's'}`;
   } catch(e){
     box.style.display = 'none';
   }
