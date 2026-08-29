@@ -384,6 +384,7 @@ selectLoja.addEventListener('change', () => {
   esconderInfoSistema();
   validarFormulario();
   atualizarResumoDia();
+  mostrarUltimaAtualizacao(selectLoja.value);
 
   // acompanha a loja escolhida pra conferência no filtro do painel de baixo
   const filtroLoja = document.getElementById('filtro-loja');
@@ -1112,21 +1113,30 @@ document.getElementById('btn-recorrente').addEventListener('click', async () => 
   }
 });
 
-// --- mostra quando o estoque_fisico foi atualizado pela última vez ---
-async function mostrarUltimaAtualizacao(){
+// --- mostra quando o estoque_fisico da loja selecionada foi atualizado
+// pela última vez (específico daquela loja, já que agora cada loja pode
+// ser atualizada independente das outras) ---
+async function mostrarUltimaAtualizacao(loja){
+  const el = document.getElementById('estoque-atualizado');
+  if (!loja){
+    el.textContent = '';
+    return;
+  }
   try {
-    const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?select=atualizado_em&order=atualizado_em.desc&limit=1`;
+    const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?select=atualizado_em&loja=eq.${loja}&order=atualizado_em.desc&limit=1`;
     const resp = await fetch(url, { headers: headers() });
     const dados = await resp.json();
     if (dados.length){
       const dataObj = new Date(dados[0].atualizado_em);
       const data = dataObj.toLocaleDateString('pt-BR');
       const hora = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      document.getElementById('estoque-atualizado').textContent = `Estoque do sistema atualizado em ${data} às ${hora}`;
+      el.textContent = `Estoque dessa loja atualizado em ${data} às ${hora}`;
+    } else {
+      el.textContent = 'Estoque dessa loja ainda não foi atualizado';
     }
   } catch(e){ /* silencioso, não é crítico */ }
 }
-mostrarUltimaAtualizacao();
+mostrarUltimaAtualizacao(selectLoja.value);
 
 // inicializa
 if (selectLoja.value){
