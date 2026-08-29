@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Estoque Mobile | Atualizar Estoque da Loja</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="theme-color" content="#0f3d2e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --verde-escuro:#0f3d2e;
+    --verde:#1b5e42;
+    --dourado:#c9a227;
+    --dourado-claro:#e6c862;
+    --bg:#f4f6f5;
+    --card:#ffffff;
+    --texto:#1c2b24;
+    --texto-suave:#5b6b63;
+    --vermelho:#c0392b;
+    --verde-ok:#2e7d4f;
+    --borda:#e1e6e3;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:'Manrope',sans-serif; background:var(--bg); color:var(--texto);
+    padding-bottom:40px;
+  }
+  header{
+    background:linear-gradient(135deg,var(--verde-escuro),var(--verde));
+    padding:22px 18px 26px; color:#fff;
+    border-bottom:3px solid var(--dourado);
+  }
+  header h1{margin:0 0 1px; font-size:20px; font-weight:800; letter-spacing:-.2px;}
+  header p{margin:0; font-size:12.5px; color:var(--dourado-claro); font-weight:600;}
+  header .tagline{margin:2px 0 0; font-size:10.5px; color:rgba(255,255,255,.55); font-weight:500; letter-spacing:.3px;}
+
+  .container{max-width:640px; margin:-14px auto 0; padding:0 14px;}
+
+  .card{
+    background:var(--card); border-radius:18px; padding:20px;
+    box-shadow:0 8px 24px rgba(15,61,46,.07); margin-bottom:16px;
+    border:1px solid var(--borda);
+  }
+  .card h2{
+    font-size:14px; margin:0 0 14px; color:var(--verde-escuro); font-weight:800;
+    text-transform:uppercase; letter-spacing:.6px;
+  }
+  .card .sub{font-size:12.5px; color:var(--texto-suave); margin:-8px 0 14px;}
+
+  label{display:block; font-size:12.5px; font-weight:700; color:var(--texto-suave); margin:10px 0 4px;}
+  select, input[type="file"]{
+    width:100%; padding:11px 12px; border-radius:10px; border:1.5px solid var(--borda);
+    font-family:inherit; font-size:14.5px; background:#fbfcfb; color:var(--texto);
+  }
+  select:focus{outline:none; border-color:var(--verde);}
+
+  .drop-zone{
+    border:2px dashed var(--borda); border-radius:14px; padding:28px 16px;
+    text-align:center; margin-top:6px; cursor:pointer; transition:border-color .15s, background .15s;
+    background:#fbfcfb;
+  }
+  .drop-zone.arrastando{border-color:var(--verde); background:#f0f4f1;}
+  .drop-zone .icone{font-size:32px; margin-bottom:8px;}
+  .drop-zone .principal{font-weight:700; color:var(--texto); font-size:14.5px;}
+  .drop-zone .secundario{font-size:12px; color:var(--texto-suave); margin-top:4px;}
+  .drop-zone .nome-arquivo{font-weight:700; color:var(--verde-escuro); margin-top:8px; font-size:13.5px;}
+  #arquivo-input{display:none;}
+
+  button{
+    width:100%; padding:13px; border:none; border-radius:12px; font-family:inherit;
+    font-weight:800; font-size:14.5px; cursor:pointer; margin-top:14px;
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  button:active{transform:scale(.98);}
+  button:disabled{background:#9fb3ab !important; cursor:not-allowed; box-shadow:none;}
+  .btn-processar{background:var(--dourado); color:#3a2f00; box-shadow:0 4px 12px rgba(201,162,39,.3);}
+  .btn-confirmar{background:var(--verde-escuro); color:#fff; box-shadow:0 4px 12px rgba(15,61,46,.25);}
+  .btn-cancelar{background:#f0f4f1; color:var(--texto-suave); box-shadow:none; margin-top:8px;}
+
+  .loading{text-align:center; padding:20px; color:var(--texto-suave); font-size:13.5px;}
+  .loading .spinner{
+    width:28px; height:28px; border:3px solid var(--borda); border-top-color:var(--verde);
+    border-radius:50%; margin:0 auto 10px; animation:girar 0.8s linear infinite;
+  }
+  @keyframes girar{to{transform:rotate(360deg);}}
+
+  .alerta{border-radius:12px; padding:12px 14px; font-size:13px; margin-top:12px; line-height:1.5;}
+  .alerta-erro{background:#fdecea; color:var(--vermelho); border:1px solid #f5c6c0;}
+  .alerta-aviso{background:#fff6e0; color:#8a6d00; border:1px solid #f0deA0;}
+  .alerta-sucesso{background:#e6f4ea; color:var(--verde-ok); border:1px solid #b9ddc4;}
+
+  .resumo-preview{
+    display:flex; gap:10px; flex-wrap:wrap; margin:14px 0;
+  }
+  .resumo-preview .item{
+    flex:1; min-width:100px; background:#f0f4f1; border-radius:10px; padding:10px 12px; text-align:center;
+  }
+  .resumo-preview .item .n{font-size:20px; font-weight:800; color:var(--verde-escuro); display:block;}
+  .resumo-preview .item .t{font-size:11px; color:var(--texto-suave); text-transform:uppercase; letter-spacing:.4px;}
+
+  .tabela-wrap{max-height:360px; overflow-y:auto; border:1px solid var(--borda); border-radius:12px; margin-top:10px;}
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  thead th{
+    position:sticky; top:0; background:var(--verde-escuro); color:#fff; text-align:left;
+    padding:9px 10px; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px;
+  }
+  tbody td{padding:8px 10px; border-bottom:1px solid var(--borda);}
+  tbody tr:last-child td{border-bottom:none;}
+  td.qtd{text-align:right; font-weight:700; color:var(--verde-escuro); white-space:nowrap;}
+
+  .avisos-unificacao{margin-top:10px;}
+  .avisos-unificacao summary{cursor:pointer; font-size:12.5px; font-weight:700; color:var(--texto-suave); padding:4px 0;}
+  .avisos-unificacao .lista-avisos{margin-top:6px;}
+  .avisos-unificacao .item-aviso{
+    font-size:12px; color:#8a6d00; background:#fff6e0; border-radius:8px; padding:8px 10px; margin-bottom:6px;
+  }
+
+  .passo-indicador{display:flex; gap:6px; margin-bottom:16px;}
+  .passo-indicador .bola{
+    flex:1; height:4px; border-radius:4px; background:var(--borda);
+  }
+  .passo-indicador .bola.ativo{background:var(--dourado);}
+  .passo-indicador .bola.feito{background:var(--verde);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container" style="margin:0; padding:0; max-width:none;">
+    <h1>Estoque Mobile</h1>
+    <p>Setec / JSM</p>
+    <p class="tagline">Atualizar Estoque da Loja</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <div class="passo-indicador">
+      <div class="bola" id="bola-1"></div>
+      <div class="bola" id="bola-2"></div>
+      <div class="bola" id="bola-3"></div>
+    </div>
+
+    <!-- ETAPA 1: escolher loja e subir o PDF -->
+    <div id="etapa-upload">
+      <h2>Atualizar estoque físico</h2>
+      <p class="sub">Suba o relatório Fatu401 (Posição Diária do Estoque) filtrado pra sua loja. O estoque dessa loja é atualizado sozinho, sem afetar as outras.</p>
+
+      <label>Sua loja</label>
+      <select id="select-loja">
+        <option value="">Selecione a loja</option>
+        <option value="001">01 - JSM Uberlândia</option>
+        <option value="002">02 - JSM Depósito Aeroporto</option>
+        <option value="003">03 - JSM Araguari</option>
+        <option value="004">04 - JSM Capinópolis</option>
+        <option value="005">05 - JSM Nova Ponte</option>
+        <option value="010">10 - Setec Uberlândia</option>
+        <option value="011">11 - Setec Araguari</option>
+        <option value="012">12 - Setec Capinópolis</option>
+        <option value="013">13 - Setec Nova Ponte</option>
+      </select>
+
+      <label>Relatório Fatu401 (PDF)</label>
+      <div class="drop-zone" id="drop-zone">
+        <div class="icone">📄</div>
+        <div class="principal">Toque pra escolher o PDF</div>
+        <div class="secundario">ou arraste o arquivo aqui</div>
+        <div class="nome-arquivo" id="nome-arquivo-selecionado"></div>
+      </div>
+      <input type="file" id="arquivo-input" accept="application/pdf">
+
+      <div id="area-erro-upload"></div>
+
+      <button class="btn-processar" id="btn-processar" disabled>Ler PDF e conferir</button>
+    </div>
+
+    <!-- ETAPA 2: carregando -->
+    <div id="etapa-carregando" style="display:none;">
+      <div class="loading">
+        <div class="spinner"></div>
+        <div id="texto-carregando">Lendo o PDF...</div>
+      </div>
+    </div>
+
+    <!-- ETAPA 3: prévia pra conferir antes de enviar -->
+    <div id="etapa-preview" style="display:none;">
+      <h2>Confira antes de enviar</h2>
+      <p class="sub" id="preview-loja-nome"></p>
+
+      <div id="area-alerta-loja"></div>
+
+      <div class="resumo-preview">
+        <div class="item"><span class="n" id="preview-total-produtos">0</span><span class="t">Produtos</span></div>
+        <div class="item"><span class="n" id="preview-total-linhas">0</span><span class="t">Linhas (loja)</span></div>
+        <div class="item"><span class="n" id="preview-total-qtd">0</span><span class="t">Qtd. total</span></div>
+      </div>
+
+      <details class="avisos-unificacao" id="bloco-avisos" style="display:none;">
+        <summary>Ver produtos unificados (BART/CST)</summary>
+        <div class="lista-avisos" id="lista-avisos"></div>
+      </details>
+
+      <div class="tabela-wrap">
+        <table>
+          <thead><tr><th>Produto</th><th>Un</th><th style="text-align:right;">Qtd</th></tr></thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="area-erro-envio"></div>
+
+      <button class="btn-confirmar" id="btn-confirmar">Confirmar e enviar</button>
+      <button class="btn-cancelar" id="btn-cancelar">Cancelar e escolher outro arquivo</button>
+    </div>
+
+    <!-- ETAPA 4: sucesso -->
+    <div id="etapa-sucesso" style="display:none;">
+      <div class="alerta alerta-sucesso" id="mensagem-sucesso"></div>
+      <button class="btn-processar" id="btn-nova-atualizacao">Atualizar outra loja</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// Mesma URL e KEY já usadas no index.html / conferencia.html
+// ============================================================
+const SUPABASE_URL = "https://wmgudywwvfzzsjjshezv.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtZ3VkeXd3dmZ6enNqanNoZXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTcwMzEsImV4cCI6MjEwMjEzMzAzMX0.c6aeTOpeqOlcHjvZHmXXhya9VsWB-q1SR2oxiMEpO4s";
+
+const NOMES_LOJA = {
+  "001":"JSM Uberlândia","002":"JSM Depósito Aeroporto","003":"JSM Araguari",
+  "004":"JSM Capinópolis","005":"JSM Nova Ponte","010":"Setec Uberlândia",
+  "011":"Setec Araguari","012":"Setec Capinópolis","013":"Setec Nova Ponte"
+};
+const LOJAS = {
+  "001": ["JSM", "JSM UBERLANDIA"], "002": ["JSM", "JSM DEPOSITO AEROPORTO"],
+  "003": ["JSM", "JSM ARAGUARI"], "004": ["JSM", "JSM CAPINOPOLIS"],
+  "005": ["JSM", "JSM NOVA PONTE"], "010": ["SETEC", "SETEC UBERLANDIA"],
+  "011": ["SETEC", "SETEC ARAGUARI"], "012": ["SETEC", "SETEC CAPINOPOLIS"],
+  "013": ["SETEC", "SETEC NOVA PONTE"],
+};
+
+function headers(){
+  return {
+    "apikey": SUPABASE_KEY,
+    "Authorization": `Bearer ${SUPABASE_KEY}`,
+    "Content-Type": "application/json"
+  };
+}
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// ============================================================
+// PARSER DO FATU401 (porta em JS do parse_fatu401.py já validado)
+// ============================================================
+const COL_CODIGO = [10, 60];
+const COL_CODORIG = [60, 121];
+const COL_DESC = [121, 289];
+const COL_UN = [289, 300];
+const COL_LJ = [380, 400];
+const COL_QTD = [455, 525];
+const ROW_TOL = 3.0;
+
+function inCol(x0, col){ return x0 >= col[0] && x0 < col[1]; }
+
+function parseQty(text){
+  return parseFloat(text.replace(/\./g, "").replace(",", "."));
+}
+
+// Extrai "palavras" (com posição x aproximada) de um item de texto do
+// pdf.js, que às vezes vem com mais de uma palavra grudada no mesmo item.
+// A posição de cada palavra é estimada proporcionalmente ao comprimento
+// de caractere dentro do item (aproximação suficiente pra colunas bem
+// espaçadas como as deste relatório).
+function extrairPalavras(item, alturaPagina){
+  const str = item.str;
+  if (!str || !str.trim()) return [];
+  const x0base = item.transform[4];
+  const yBase = item.transform[5];
+  const top = alturaPagina - yBase;
+  const largura = item.width || (str.length * 4);
+  const totalChars = str.length || 1;
+
+  const palavras = [];
+  const partes = str.split(/(\s+)/);
+  let pos = 0;
+  for (const parte of partes){
+    if (parte.trim().length > 0){
+      const x0 = x0base + (pos / totalChars) * largura;
+      palavras.push({ text: parte, x0, top });
+    }
+    pos += parte.length;
+  }
+  return palavras;
+}
+
+function groupRows(palavras){
+  const ordenadas = [...palavras].sort((a, b) => a.top - b.top);
+  const rows = [];
+  let atual = [];
+  let topAtual = null;
+  for (const w of ordenadas){
+    if (topAtual === null || Math.abs(w.top - topAtual) <= ROW_TOL){
+      atual.push(w);
+      if (topAtual === null) topAtual = w.top;
+    } else {
+      rows.push([...atual].sort((a, b) => a.x0 - b.x0));
+      atual = [w];
+      topAtual = w.top;
+    }
+  }
+  if (atual.length) rows.push([...atual].sort((a, b) => a.x0 - b.x0));
+  return rows;
+}
+
+function recuperarPrefixoDescricao(codorigWords){
+  let prefixo = "";
+  for (const w of codorigWords){
+    const letras = w.text.split("").filter(c => !/[0-9]/.test(c)).join("");
+    if (letras) prefixo += letras;
+  }
+  return prefixo;
+}
+
+function extrairCodigoOriginal(codorigWords){
+  let digitos = "";
+  for (const w of codorigWords){
+    digitos += w.text.split("").filter(c => /[0-9]/.test(c)).join("");
+  }
+  return digitos;
+}
+
+async function parsePdf(arrayBuffer){
+  const produtos = [];
+  let subgrupoAtual = null;
+  let pendenteCodigo = null;
+  let pendenteCodigoOriginal = "";
+  let produtoAtual = null;
+
+  function finalizarProduto(){
+    if (produtoAtual !== null){
+      produtoAtual.total = Object.values(produtoAtual.lojas).reduce((a, b) => a + b, 0);
+      produtos.push(produtoAtual);
+      produtoAtual = null;
+    }
+  }
+
+  const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  for (let pageNum = 1; pageNum <= doc.numPages; pageNum++){
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+
+    let palavras = [];
+    for (const item of content.items){
+      palavras.push(...extrairPalavras(item, viewport.height));
+    }
+
+    for (const row of groupRows(palavras)){
+      if (!row.length) continue;
+      const texts = row.map(w => w.text);
+      const firstText = texts[0];
+
+      if (["Página", "Data", "Fatu401", "Código", "Siagri"].includes(firstText)) continue;
+      const upperTexts = texts.map(t => t.toUpperCase());
+      if (upperTexts.includes("TOTAL") && upperTexts.includes("GERAL")) continue;
+      if ((firstText === "JSM" || firstText === "SETEC") && texts.some(t => t.toUpperCase().includes("COMERCIO"))) continue;
+      if (texts.includes("Existem")) continue;
+
+      if (firstText === "Sub-Grupo"){
+        finalizarProduto();
+        pendenteCodigo = null;
+        subgrupoAtual = texts.slice(1).filter(t => !/^\d+$/.test(t)).join(" ");
+        continue;
+      }
+
+      if (firstText === "Total" && texts[1] === "grupo") continue;
+
+      const temTotalProduto =
+        row.some(w => w.text === "Total" && inCol(w.x0, [400, 425])) &&
+        row.some(w => w.text === "produto");
+      if (temTotalProduto){
+        finalizarProduto();
+        pendenteCodigo = null;
+        continue;
+      }
+
+      const wCodigo = row.filter(w => inCol(w.x0, COL_CODIGO));
+      const wCodorig = row.filter(w => inCol(w.x0, COL_CODORIG));
+      const wDesc = row.filter(w => inCol(w.x0, COL_DESC));
+      const wUn = row.filter(w => inCol(w.x0, COL_UN));
+      const wLj = row.filter(w => inCol(w.x0, COL_LJ));
+      const wQtd = row.filter(w => inCol(w.x0, COL_QTD));
+
+      const temCodigo = wCodigo.length > 0 && /^[0-9]/.test(wCodigo[0].text);
+      const temDesc = wDesc.length > 0;
+      const temLj = wLj.length > 0;
+      const temQtd = wQtd.length > 0;
+
+      // Tipo 1: código + cod.original apenas (descrição vem na próxima linha)
+      if (temCodigo && !temDesc && !temLj){
+        finalizarProduto();
+        pendenteCodigo = wCodigo[0].text;
+        pendenteCodigoOriginal = extrairCodigoOriginal(wCodorig);
+        continue;
+      }
+
+      // Tipo 2: linha completa
+      if (temCodigo && temDesc && temLj && temQtd){
+        finalizarProduto();
+        const codigo = wCodigo[0].text;
+        const prefixo = recuperarPrefixoDescricao(wCodorig);
+        const codigoOriginal = extrairCodigoOriginal(wCodorig);
+        const partesDesc = (prefixo ? [prefixo] : []).concat(wDesc.map(w => w.text));
+        const descricao = partesDesc.join(" ");
+        const unidade = wUn.length ? wUn[0].text : "";
+        const lj = wLj[0].text;
+        const qtd = parseQty(wQtd[0].text);
+        produtoAtual = {
+          subgrupo: subgrupoAtual, codigo, codigo_original: codigoOriginal,
+          descricao, unidade, lojas: { [lj]: qtd },
+        };
+        pendenteCodigo = null;
+        pendenteCodigoOriginal = "";
+        continue;
+      }
+
+      // Tipo 3: descrição (+Un+Lj+Qtd) sem código -> usa código pendente (wrap)
+      if (!temCodigo && temDesc && temLj && temQtd){
+        finalizarProduto();
+        const codigo = pendenteCodigo;
+        const codigoOriginal = pendenteCodigoOriginal;
+        const descricao = wDesc.map(w => w.text).join(" ");
+        const unidade = wUn.length ? wUn[0].text : "";
+        const lj = wLj[0].text;
+        const qtd = parseQty(wQtd[0].text);
+        produtoAtual = {
+          subgrupo: subgrupoAtual, codigo, codigo_original: codigoOriginal,
+          descricao, unidade, lojas: { [lj]: qtd },
+        };
+        pendenteCodigo = null;
+        pendenteCodigoOriginal = "";
+        continue;
+      }
+
+      // Tipo 4: loja adicional do produto atual (só Lj + Qtd)
+      if (!temCodigo && !temDesc && temLj && temQtd && produtoAtual !== null){
+        const lj = wLj[0].text;
+        const qtd = parseQty(wQtd[0].text);
+        produtoAtual.lojas[lj] = (produtoAtual.lojas[lj] || 0) + qtd;
+        continue;
+      }
+      // qualquer outra linha -> ignora
+    }
+  }
+  finalizarProduto();
+  return produtos;
+}
+
+// --- mesclagem de nomes (CST/BART) ---
+const PAT_PAREN_FINAL = /\s*-\s*\([^)]*\)\s*$/;
+const PAT_CST_FINAL = /\s*-\s*(?:BART-\s*)?\d{2,4}\s*$/i;
+
+function nomeBaseProduto(descricao){
+  let d = descricao.trim();
+  let mudou = true;
+  while (mudou){
+    mudou = false;
+    if (PAT_PAREN_FINAL.test(d)){ d = d.replace(PAT_PAREN_FINAL, ""); mudou = true; }
+    if (PAT_CST_FINAL.test(d)){ d = d.replace(PAT_CST_FINAL, ""); mudou = true; }
+  }
+  return d.trim();
+}
+
+const PAT_EMBALAGEM_FINAL = /\(([^)]*)\)\s*$/;
+const SIGLAS_FORMULACAO = new Set([
+  "EC","SC","WG","SG","WP","CS","ZC","DC","GR","SL","OD",
+  "FS","ME","EW","MC","SP","FL","PM","SE","EO","DP","WDG","OF",
+]);
+
+function extrairMarcaEEmbalagem(nomeBase){
+  const m = PAT_EMBALAGEM_FINAL.exec(nomeBase);
+  if (m){
+    const embalagem = m[0].trim();
+    const marca = nomeBase.slice(0, m.index).trim();
+    return [marca, embalagem];
+  }
+  return [nomeBase, ""];
+}
+
+function marcaComparavel(marca){
+  let palavras = marca.split(/\s+/).filter(Boolean);
+  while (palavras.length && SIGLAS_FORMULACAO.has(palavras[palavras.length - 1].toUpperCase())){
+    palavras = palavras.slice(0, -1);
+  }
+  return palavras.join(" ").trim().toUpperCase();
+}
+
+function montarEstoqueSistema(produtos, lojaSelecionada){
+  const agrupado = new Map();
+
+  for (const produto of produtos){
+    const nomeBase = nomeBaseProduto(produto.descricao);
+    const [marca, embalagem] = extrairMarcaEEmbalagem(nomeBase);
+    const marcaCmp = marcaComparavel(marca);
+    const codigoOriginal = (produto.codigo_original || "").trim();
+
+    for (const [lj, qtd] of Object.entries(produto.lojas)){
+      const lojaNum = lj.padStart(3, "0");
+      const [grupo] = LOJAS[lojaNum] || ["?", ""];
+
+      const usaCodorig = grupo === "JSM" && !!codigoOriginal;
+      const chave = usaCodorig
+        ? `CODORIG|${lojaNum}|${codigoOriginal}|${embalagem}|${marcaCmp}`
+        : `NOME|${lojaNum}|${nomeBase}|${produto.unidade}`;
+
+      if (!agrupado.has(chave)){
+        agrupado.set(chave, {
+          tipo: usaCodorig ? "CODORIG" : "NOME",
+          quantidade: 0, codigos: [], nomesBase: new Set(), melhorNome: "",
+          lojaNum, unidade: produto.unidade,
+        });
+      }
+      const entrada = agrupado.get(chave);
+      entrada.quantidade += qtd;
+      entrada.codigos.push(produto.codigo);
+      entrada.nomesBase.add(nomeBase);
+      if (nomeBase.length > entrada.melhorNome.length) entrada.melhorNome = nomeBase;
+    }
+  }
+
+  const linhasPorChaveFinal = new Map();
+  const avisos = [];
+
+  for (const entrada of agrupado.values()){
+    const lojaNum = entrada.lojaNum;
+    const [grupo, empresa] = LOJAS[lojaNum] || ["?", `LOJA ${lojaNum} (DESCONHECIDA)`];
+    const nomeFinal = entrada.melhorNome;
+
+    if (entrada.tipo === "CODORIG" && entrada.nomesBase.size > 1){
+      const variantes = [...entrada.nomesBase].sort().map(n => `"${n}"`).join(" + ");
+      avisos.push(`Unificado (loja ${lojaNum}): ${variantes} -> "${nomeFinal}" (total: ${Math.round(entrada.quantidade * 10000) / 10000})`);
+    }
+
+    const chaveFinal = `${lojaNum}|${nomeFinal}|${entrada.unidade}`;
+    const qtdArred = Math.round(entrada.quantidade * 10000) / 10000;
+    if (linhasPorChaveFinal.has(chaveFinal)){
+      const existente = linhasPorChaveFinal.get(chaveFinal);
+      existente.quantidade = Math.round((existente.quantidade + qtdArred) * 10000) / 10000;
+      existente.codigos_mesclados.push(...entrada.codigos);
+      avisos.push(`Unificado (loja ${lojaNum}), nomes finais coincidiram: "${nomeFinal}" teve linhas de origens diferentes somadas (total agora: ${existente.quantidade})`);
+    } else {
+      linhasPorChaveFinal.set(chaveFinal, {
+        loja: lojaNum, grupo, empresa, produto: nomeFinal,
+        unidade: entrada.unidade, quantidade: qtdArred,
+        codigos_mesclados: [...entrada.codigos],
+      });
+    }
+  }
+
+  return { linhas: [...linhasPorChaveFinal.values()], avisos };
+}
+
+// ============================================================
+// FLUXO DA PÁGINA (upload -> prévia -> confirmar -> enviar)
+// ============================================================
+let arquivoSelecionado = null;
+let linhasParaEnviar = null;
+let avisosUnificacao = [];
+
+const selectLoja = document.getElementById("select-loja");
+const dropZone = document.getElementById("drop-zone");
+const inputArquivo = document.getElementById("arquivo-input");
+const nomeArquivoEl = document.getElementById("nome-arquivo-selecionado");
+const btnProcessar = document.getElementById("btn-processar");
+
+function atualizarBotaoProcessar(){
+  btnProcessar.disabled = !(selectLoja.value && arquivoSelecionado);
+}
+selectLoja.addEventListener("change", atualizarBotaoProcessar);
+
+dropZone.addEventListener("click", () => inputArquivo.click());
+dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("arrastando"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("arrastando"));
+dropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropZone.classList.remove("arrastando");
+  if (e.dataTransfer.files.length) selecionarArquivo(e.dataTransfer.files[0]);
+});
+inputArquivo.addEventListener("change", () => {
+  if (inputArquivo.files.length) selecionarArquivo(inputArquivo.files[0]);
+});
+
+function selecionarArquivo(arquivo){
+  document.getElementById("area-erro-upload").innerHTML = "";
+  if (arquivo.type !== "application/pdf"){
+    document.getElementById("area-erro-upload").innerHTML =
+      '<div class="alerta alerta-erro">Escolha um arquivo PDF.</div>';
+    arquivoSelecionado = null;
+    nomeArquivoEl.textContent = "";
+    atualizarBotaoProcessar();
+    return;
+  }
+  arquivoSelecionado = arquivo;
+  nomeArquivoEl.textContent = "📎 " + arquivo.name;
+  atualizarBotaoProcessar();
+}
+
+function mostrarEtapa(nome){
+  ["upload", "carregando", "preview", "sucesso"].forEach(e => {
+    document.getElementById("etapa-" + e).style.display = (e === nome) ? "block" : "none";
+  });
+  const passo = { upload: 1, carregando: 2, preview: 2, sucesso: 3 }[nome];
+  for (let i = 1; i <= 3; i++){
+    const bola = document.getElementById("bola-" + i);
+    bola.classList.remove("ativo", "feito");
+    if (i < passo) bola.classList.add("feito");
+    else if (i === passo) bola.classList.add("ativo");
+  }
+}
+
+btnProcessar.addEventListener("click", async () => {
+  mostrarEtapa("carregando");
+  document.getElementById("texto-carregando").textContent = "Lendo o PDF...";
+  try {
+    const arrayBuffer = await arquivoSelecionado.arrayBuffer();
+    const produtos = await parsePdf(arrayBuffer);
+
+    document.getElementById("texto-carregando").textContent = "Calculando quantidades...";
+    const { linhas, avisos } = montarEstoqueSistema(produtos);
+
+    const lojaEscolhida = selectLoja.value;
+    linhasParaEnviar = linhas.filter(l => l.loja === lojaEscolhida);
+    avisosUnificacao = avisos.filter(a => a.includes(`loja ${lojaEscolhida}`));
+
+    const lojasEncontradas = [...new Set(linhas.map(l => l.loja))];
+
+    if (linhasParaEnviar.length === 0){
+      mostrarEtapa("upload");
+      const lojasTxt = lojasEncontradas.length
+        ? `O PDF parece ser da(s) loja(s): ${lojasEncontradas.map(l => NOMES_LOJA[l] || l).join(", ")}.`
+        : "Não consegui identificar nenhuma loja nesse PDF.";
+      document.getElementById("area-erro-upload").innerHTML =
+        `<div class="alerta alerta-erro">Não encontrei produtos da loja selecionada (${NOMES_LOJA[lojaEscolhida]}) nesse PDF. ${lojasTxt} Confira se o relatório e a loja escolhida são os certos.</div>`;
+      return;
+    }
+
+    document.getElementById("preview-loja-nome").textContent =
+      `Loja: ${NOMES_LOJA[lojaEscolhida]}`;
+
+    const alertaLoja = document.getElementById("area-alerta-loja");
+    const outrasLojas = lojasEncontradas.filter(l => l !== lojaEscolhida);
+    if (outrasLojas.length){
+      alertaLoja.innerHTML = `<div class="alerta alerta-aviso">Esse PDF também tem dados de outra(s) loja(s) (${outrasLojas.map(l => NOMES_LOJA[l] || l).join(", ")}). Só os produtos da loja ${NOMES_LOJA[lojaEscolhida]} serão enviados agora.</div>`;
+    } else {
+      alertaLoja.innerHTML = "";
+    }
+
+    const totalQtd = linhasParaEnviar.reduce((s, l) => s + l.quantidade, 0);
+    document.getElementById("preview-total-produtos").textContent = linhasParaEnviar.length;
+    document.getElementById("preview-total-linhas").textContent = linhasParaEnviar.length;
+    document.getElementById("preview-total-qtd").textContent =
+      totalQtd.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+
+    const blocoAvisos = document.getElementById("bloco-avisos");
+    if (avisosUnificacao.length){
+      blocoAvisos.style.display = "block";
+      document.getElementById("lista-avisos").innerHTML = avisosUnificacao
+        .map(a => `<div class="item-aviso">${a.replace(/^Unificado \(loja \d+\)[,:]?\s*/, "")}</div>`)
+        .join("");
+    } else {
+      blocoAvisos.style.display = "none";
+    }
+
+    const tbody = document.getElementById("preview-tbody");
+    tbody.innerHTML = [...linhasParaEnviar]
+      .sort((a, b) => a.produto.localeCompare(b.produto, "pt-BR"))
+      .map(l => `<tr><td>${l.produto}</td><td>${l.unidade || ""}</td><td class="qtd">${l.quantidade.toLocaleString("pt-BR")}</td></tr>`)
+      .join("");
+
+    document.getElementById("area-erro-envio").innerHTML = "";
+    mostrarEtapa("preview");
+  } catch (e){
+    console.error(e);
+    mostrarEtapa("upload");
+    document.getElementById("area-erro-upload").innerHTML =
+      `<div class="alerta alerta-erro">Não consegui ler esse PDF. Confira se é o relatório Fatu401 certo, ou tente de novo. (${e.message || e})</div>`;
+  }
+});
+
+document.getElementById("btn-cancelar").addEventListener("click", () => {
+  arquivoSelecionado = null;
+  nomeArquivoEl.textContent = "";
+  inputArquivo.value = "";
+  atualizarBotaoProcessar();
+  mostrarEtapa("upload");
+});
+
+document.getElementById("btn-confirmar").addEventListener("click", async () => {
+  const btn = document.getElementById("btn-confirmar");
+  btn.disabled = true;
+  btn.textContent = "Enviando...";
+  document.getElementById("area-erro-envio").innerHTML = "";
+
+  try {
+    const lojaEscolhida = selectLoja.value;
+
+    // apaga só as linhas dessa loja (nunca a tabela inteira) antes de
+    // recarregar, pra não afetar as outras lojas
+    const respDelete = await fetch(
+      `${SUPABASE_URL}/rest/v1/estoque_fisico?loja=eq.${lojaEscolhida}`,
+      { method: "DELETE", headers: headers() }
+    );
+    if (!respDelete.ok) throw new Error(await respDelete.text());
+
+    const agora = new Date().toISOString();
+    const linhasComData = linhasParaEnviar.map(l => ({
+      loja: l.loja, grupo: l.grupo, empresa: l.empresa, produto: l.produto,
+      unidade: l.unidade, quantidade: l.quantidade, atualizado_em: agora,
+    }));
+
+    const tamanhoBloco = 200;
+    for (let i = 0; i < linhasComData.length; i += tamanhoBloco){
+      const bloco = linhasComData.slice(i, i + tamanhoBloco);
+      const respInsert = await fetch(`${SUPABASE_URL}/rest/v1/estoque_fisico`, {
+        method: "POST",
+        headers: { ...headers(), Prefer: "return=minimal" },
+        body: JSON.stringify(bloco),
+      });
+      if (!respInsert.ok) throw new Error(await respInsert.text());
+    }
+
+    document.getElementById("mensagem-sucesso").innerHTML =
+      `✅ <b>${linhasParaEnviar.length} produtos</b> atualizados na loja <b>${NOMES_LOJA[lojaEscolhida]}</b>.<br>As outras lojas não foram alteradas.`;
+    mostrarEtapa("sucesso");
+  } catch (e){
+    console.error(e);
+    document.getElementById("area-erro-envio").innerHTML =
+      `<div class="alerta alerta-erro">Erro ao enviar pro banco de dados. Tente de novo. (${e.message || e})</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Confirmar e enviar";
+  }
+});
+
+document.getElementById("btn-nova-atualizacao").addEventListener("click", () => {
+  arquivoSelecionado = null;
+  nomeArquivoEl.textContent = "";
+  inputArquivo.value = "";
+  selectLoja.value = "";
+  atualizarBotaoProcessar();
+  mostrarEtapa("upload");
+});
+
+mostrarEtapa("upload");
+</script>
+
+</body>
+</html>
