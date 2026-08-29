@@ -323,7 +323,17 @@ function groupRows(palavras){
   return rows;
 }
 
+// Só tenta "recuperar" prefixo/código quando o texto do Cod. Original é
+// LONGO o suficiente pra ser um caso real de fusão (ex: um código de
+// ~19 dígitos colado com uma palavra inteira da descrição). Códigos
+// curtos e legítimos como "90001-00-08" ou "9B245-07-DB" têm traços/
+// letras que fazem parte do código de verdade, não da descrição — sem
+// esse limite, eles vazavam pro nome do produto (ex: "-- LALSTIM NUTRI").
+const TAMANHO_MIN_CODIGO_FUNDIDO = 15;
+
 function recuperarPrefixoDescricao(codorigWords){
+  const textoCompleto = codorigWords.map(w => w.text).join("");
+  if (textoCompleto.length < TAMANHO_MIN_CODIGO_FUNDIDO) return "";
   let prefixo = "";
   for (const w of codorigWords){
     const letras = w.text.split("").filter(c => !/[0-9]/.test(c)).join("");
@@ -333,6 +343,8 @@ function recuperarPrefixoDescricao(codorigWords){
 }
 
 function extrairCodigoOriginal(codorigWords){
+  const textoCompleto = codorigWords.map(w => w.text).join("");
+  if (textoCompleto.length < TAMANHO_MIN_CODIGO_FUNDIDO) return "";
   let digitos = "";
   for (const w of codorigWords){
     digitos += w.text.split("").filter(c => /[0-9]/.test(c)).join("");
