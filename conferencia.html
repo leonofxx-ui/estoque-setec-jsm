@@ -184,6 +184,29 @@
   .modal-botoes button{margin-top:0; flex:1;}
   .modal-btn-voltar{background:var(--verde-escuro); color:#fff;}
   .modal-btn-continuar{background:#f0f4f1; color:var(--texto-suave); box-shadow:none;}
+
+  .lote-linha{
+    background:#fff; border:1.5px solid var(--borda); border-radius:10px;
+    padding:10px 12px; margin-top:8px;
+  }
+  .lote-linha.tem-validade{border-color:var(--vermelho);}
+  .lote-campos{display:flex; gap:8px; align-items:flex-end;}
+  .lote-campos > div{flex:1;}
+  .lote-campos label{margin:0 0 4px;}
+  .lote-remover{
+    flex:0 0 auto; width:auto; margin:0; padding:9px 10px; background:#f0f4f1;
+    color:var(--texto-suave); box-shadow:none; border-radius:8px; font-size:13px;
+  }
+  .lote-add{
+    background:none; color:var(--verde); box-shadow:none; text-align:left;
+    padding:8px 0; margin-top:6px; font-weight:700; font-size:12.5px;
+  }
+  .lote-total{
+    background:#e6f4ea; border-radius:10px; padding:10px 12px; margin-top:10px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .lote-total .lbl{font-size:12.5px; color:var(--texto-suave); font-weight:700;}
+  .lote-total .val{font-size:17px; color:var(--verde-ok); font-weight:800;}
 </style>
 </head>
 <body>
@@ -245,10 +268,12 @@
     </div>
 
     <label>Quantidade contada</label>
-    <input type="number" step="0.01" id="qtd-contada" placeholder="0">
-
-    <label>Validade do produto <span style="font-weight:400; text-transform:none; letter-spacing:0;">(opcional)</span></label>
-    <input type="date" id="validade">
+    <div id="lotes-container"></div>
+    <div class="lote-add" id="btn-add-lote">+ Adicionar outro lote (validade diferente)</div>
+    <div class="lote-total" id="lote-total-box" style="display:none;">
+      <span class="lbl">Total contado</span>
+      <span class="val" id="lote-total-valor">0</span>
+    </div>
 
     <div class="diferenca-box" id="diferenca-box"></div>
 
@@ -325,6 +350,7 @@ function headers(){
 // --- estado da contagem em andamento ---
 let produtoSelecionado = null; // {produto, unidade, quantidade}
 let debounceBusca = null;
+let contadorLotes = 0; // id incremental só pra identificar as linhas de lote na tela
 
 // "finalizada" agora é persistido no localStorage por loja+dia, então
 // sobrevive a F5 / fechar e abrir o navegador de novo (antes era só uma
@@ -401,6 +427,101 @@ checkConfirmar.addEventListener('change', () => {
   localStorage.setItem('conf_pedir_confirmacao', checkConfirmar.checked);
 });
 
+// ============================================================
+// LOTES (quantidade + validade) — permite dividir a contagem de um
+// mesmo produto em partes com validades diferentes (ex: 75 sem validade
+// vencida + 25 vencidos numa data específica), sem precisar lançar o
+// volume inteiro como se fosse tudo da mesma validade.
+// ============================================================
+function criarLinhaLote(validadeInicial = ''){
+  contadorLotes++;
+  const id = contadorLotes;
+  const div = document.createElement('div');
+  div.className = 'lote-linha';
+  div.dataset.loteId = id;
+  div.innerHTML = `
+    <div class="lote-campos">
+      <div>
+        <label>Quantidade</label>
+        <input type="number" step="0.01" class="lote-qtd" placeholder="0">
+      </div>
+      <div>
+        <label>Validade (opcional)</label>
+        <input type="date" class="lote-validade" value="${validadeInicial}">
+      </div>
+      <button type="button" class="lote-remover" style="display:none;">✕</button>
+    </div>
+  `;
+  const inputQtd = div.querySelector('.lote-qtd');
+  const inputValidade = div.querySelector('.lote-validade');
+  const btnRemover = div.querySelector('.lote-remover');
+
+  inputQtd.addEventListener('input', () => { atualizarTotalLotes(); calcularDiferenca(); validarFormulario(); });
+  inputValidade.addEventListener('input', () => {
+    div.classList.toggle('tem-validade', !!inputValidade.value);
+  });
+  btnRemover.addEventListener('click', () => {
+    div.remove();
+    atualizarBotoesRemoverLote();
+    atualizarTotalLotes();
+    calcularDiferenca();
+    validarFormulario();
+  });
+
+  if (validadeInicial) div.classList.add('tem-validade');
+  return div;
+}
+
+function resetarLotes(validadeInicial = ''){
+  const container = document.getElementById('lotes-container');
+  container.innerHTML = '';
+  contadorLotes = 0;
+  container.appendChild(criarLinhaLote(validadeInicial));
+  atualizarBotoesRemoverLote();
+  atualizarTotalLotes();
+}
+
+function atualizarBotoesRemoverLote(){
+  const linhas = document.querySelectorAll('#lotes-container .lote-linha');
+  linhas.forEach(linha => {
+    linha.querySelector('.lote-remover').style.display = linhas.length > 1 ? 'block' : 'none';
+  });
+}
+
+function obterLotes(){
+  // retorna só os lotes com quantidade preenchida (> 0 ou número válido)
+  const linhas = document.querySelectorAll('#lotes-container .lote-linha');
+  const lotes = [];
+  linhas.forEach(linha => {
+    const qtdTexto = linha.querySelector('.lote-qtd').value;
+    const validade = linha.querySelector('.lote-validade').value || null;
+    if (qtdTexto !== ''){
+      const qtd = parseFloat(qtdTexto);
+      if (!isNaN(qtd)) lotes.push({ quantidade: qtd, validade });
+    }
+  });
+  return lotes;
+}
+
+function totalLotes(){
+  return obterLotes().reduce((soma, l) => soma + l.quantidade, 0);
+}
+
+function atualizarTotalLotes(){
+  const linhas = document.querySelectorAll('#lotes-container .lote-linha');
+  const total = totalLotes();
+  const box = document.getElementById('lote-total-box');
+  box.style.display = linhas.length > 1 ? 'flex' : 'none';
+  document.getElementById('lote-total-valor').textContent =
+    total.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+document.getElementById('btn-add-lote').addEventListener('click', () => {
+  document.getElementById('lotes-container').appendChild(criarLinhaLote());
+  atualizarBotoesRemoverLote();
+  atualizarTotalLotes();
+});
+
 // --- busca de produto (autocomplete) ---
 const inputBusca = document.getElementById('busca-produto');
 const boxResultado = document.getElementById('resultado-busca');
@@ -442,7 +563,7 @@ async function buscarProduto(termo, loja){
   }
 }
 
-boxResultado.addEventListener('click', (ev) => {
+boxResultado.addEventListener('click', async (ev) => {
   const alvo = ev.target.closest('div[data-produto]');
   if (!alvo) return;
   produtoSelecionado = {
@@ -453,9 +574,25 @@ boxResultado.addEventListener('click', (ev) => {
   inputBusca.value = produtoSelecionado.produto;
   boxResultado.style.display = 'none';
   mostrarInfoSistema(produtoSelecionado.quantidade);
+
+  // busca a validade da última contagem desse produto nessa loja (se
+  // existir) pra já preencher sozinho, sem precisar digitar de novo
+  const validadeAnterior = await buscarValidadeAnterior(selectLoja.value, produtoSelecionado.produto);
+  resetarLotes(validadeAnterior || '');
+
   calcularDiferenca();
   validarFormulario();
 });
+
+async function buscarValidadeAnterior(loja, produto){
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=validade&loja=eq.${loja}&produto=eq.${encodeURIComponent(produto)}&validade=not.is.null&order=criado_em.desc&limit=1`;
+    const resp = await fetch(url, { headers: headers() });
+    const dados = await resp.json();
+    if (dados.length && dados[0].validade) return dados[0].validade;
+  } catch(e){ /* silencioso, não é crítico — só não preenche sozinho */ }
+  return null;
+}
 
 function mostrarInfoSistema(qtd){
   document.getElementById('info-sistema').style.display = 'flex';
@@ -464,19 +601,19 @@ function mostrarInfoSistema(qtd){
 function esconderInfoSistema(){
   document.getElementById('info-sistema').style.display = 'none';
   document.getElementById('diferenca-box').style.display = 'none';
+  document.getElementById('lotes-container').innerHTML = '';
+  document.getElementById('lote-total-box').style.display = 'none';
 }
 
-// --- diferença em tempo real ---
-const inputContada = document.getElementById('qtd-contada');
-inputContada.addEventListener('input', () => { calcularDiferenca(); validarFormulario(); });
-
+// --- diferença em tempo real (usa a SOMA de todos os lotes) ---
 function calcularDiferenca(){
   const box = document.getElementById('diferenca-box');
-  if (!produtoSelecionado || inputContada.value === ''){
+  const lotes = obterLotes();
+  if (!produtoSelecionado || !lotes.length){
     box.style.display = 'none';
     return;
   }
-  const contada = parseFloat(inputContada.value) || 0;
+  const contada = totalLotes();
   const dif = contada - produtoSelecionado.quantidade;
   box.style.display = 'block';
   if (dif === 0){
@@ -492,18 +629,31 @@ function calcularDiferenca(){
 }
 
 function validarFormulario(){
+  const lotes = obterLotes();
   const ok = getNomeEncarregado() && selectLoja.value &&
-             produtoSelecionado && inputContada.value !== '';
+             produtoSelecionado && lotes.length > 0;
   document.getElementById('btn-salvar').disabled = !ok;
 }
 
 // --- salvar contagem ---
 document.getElementById('btn-salvar').addEventListener('click', async () => {
   const btn = document.getElementById('btn-salvar');
+  const lotes = obterLotes();
+  if (!lotes.length) return;
+
+  const totalContado = totalLotes();
+  // validade "representativa" do produto = a mais antiga entre os lotes
+  // preenchidos (se algum lote estiver vencido, o produto entra nos
+  // alertas de vencido normalmente)
+  const validadesPreenchidas = lotes.map(l => l.validade).filter(Boolean).sort();
+  const validadeRepresentativa = validadesPreenchidas.length ? validadesPreenchidas[0] : null;
 
   // confirmação (se o checkbox estiver marcado)
   if (checkConfirmar.checked){
-    const ok = confirm(`Confirma a contagem?\n\n${produtoSelecionado.produto}\nQuantidade: ${inputContada.value} ${produtoSelecionado.unidade||''}`);
+    const resumoLotes = lotes.length > 1
+      ? lotes.map(l => `  • ${l.quantidade} ${produtoSelecionado.unidade||''}${l.validade ? ' — validade ' + new Date(l.validade+'T00:00:00').toLocaleDateString('pt-BR') : ''}`).join('\n')
+      : '';
+    const ok = confirm(`Confirma a contagem?\n\n${produtoSelecionado.produto}\nTotal: ${totalContado} ${produtoSelecionado.unidade||''}${resumoLotes ? '\n' + resumoLotes : ''}`);
     if (!ok) return;
   }
 
@@ -527,8 +677,9 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
       produto: produto,
       unidade: produtoSelecionado.unidade,
       quantidade_sistema: produtoSelecionado.quantidade,
-      quantidade_contada: parseFloat(inputContada.value),
-      validade: document.getElementById('validade').value || null
+      quantidade_contada: totalContado,
+      validade: validadeRepresentativa,
+      lotes: lotes
     };
 
     if (existentes.length){
@@ -548,6 +699,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
           quantidade_sistema: corpo.quantidade_sistema,
           quantidade_contada: corpo.quantidade_contada,
           validade: corpo.validade,
+          lotes: corpo.lotes,
           criado_em: new Date().toISOString()
         })
       });
@@ -561,10 +713,8 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
       if (!resp.ok) throw new Error(await resp.text());
     }
 
-    // limpa só o produto/quantidade/validade, mantém nome e loja pra próxima contagem
+    // limpa só o produto/lotes, mantém nome e loja pra próxima contagem
     inputBusca.value = '';
-    inputContada.value = '';
-    document.getElementById('validade').value = '';
     produtoSelecionado = null;
     esconderInfoSistema();
     desmarcarFinalizada(loja); // uma nova contagem foi salva, volta a mostrar o painel normalmente
@@ -672,10 +822,19 @@ async function carregarConferencias(){
           : ` · validade ${dataFmt}`;
       }
 
+      let lotesTxt = '';
+      if (Array.isArray(d.lotes) && d.lotes.length > 1){
+        lotesTxt = '<div class="meta">' + d.lotes.map(l => {
+          const v = l.validade ? new Date(l.validade+'T00:00:00').toLocaleDateString('pt-BR') : 'sem validade';
+          return `${l.quantidade} ${d.unidade||''} (${v})`;
+        }).join(' + ') + '</div>';
+      }
+
       return `
         <div class="item-conf">
           <div class="topo-item"><span>${d.produto}</span><span>${d.quantidade_contada} ${d.unidade||''}</span></div>
           <div class="meta">${d.empresa} · ${d.encarregado} · ${data}${validadeTxt}</div>
+          ${lotesTxt}
           <span class="tag-dif ${tagClasse}">${tagTexto}</span>
         </div>`;
     }).join('');
@@ -1142,6 +1301,7 @@ mostrarUltimaAtualizacao(selectLoja.value);
 if (selectLoja.value){
   document.getElementById('filtro-loja').value = selectLoja.value;
 }
+resetarLotes();
 validarFormulario();
 carregarConferencias();
 atualizarResumoDia();
