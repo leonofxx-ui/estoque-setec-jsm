@@ -197,17 +197,6 @@
   }
   .lote-qtd{-webkit-appearance:none; appearance:none;}
   .lote-campos label{margin:0 0 4px;}
-  .lote-data-wrap{position:relative;}
-  .lote-data-wrap .lote-validade{
-    color:transparent; position:relative; z-index:1;
-  }
-  .lote-data-display{
-    position:absolute; left:12px; right:28px; top:0; bottom:0;
-    display:flex; align-items:center;
-    pointer-events:none; font-size:14.5px; color:var(--texto);
-    white-space:nowrap; overflow:hidden; z-index:0;
-  }
-  .lote-data-display.vazio{color:#9aa39e;}
   .lote-qtd, .lote-validade{height:42px; padding-top:0; padding-bottom:0;}
   .lote-remover{height:42px; display:flex; align-items:center; justify-content:center;}
   .lote-remover{
@@ -464,10 +453,7 @@ function criarLinhaLote(validadeInicial = ''){
       </div>
       <div>
         <label>Validade (opcional)</label>
-        <div class="lote-data-wrap">
-          <input type="date" class="lote-validade" value="${validadeInicial}">
-          <span class="lote-data-display vazio">Selecionar</span>
-        </div>
+        <input type="date" class="lote-validade" value="${validadeInicial}">
       </div>
       <button type="button" class="lote-remover" style="display:none;">✕</button>
     </div>
@@ -475,30 +461,10 @@ function criarLinhaLote(validadeInicial = ''){
   const inputQtd = div.querySelector('.lote-qtd');
   const inputValidade = div.querySelector('.lote-validade');
   const btnRemover = div.querySelector('.lote-remover');
-  const dataDisplay = div.querySelector('.lote-data-display');
-
-  // O campo nativo de data mostra a data no formato do idioma do
-  // aparelho (ex: "30 de mai. de 2025"), o que não cabe bem na caixa.
-  // Pra sempre mostrar DD/MM/AAAA independente do celular, deixamos o
-  // texto do campo nativo invisível e escrevemos por cima um texto
-  // nosso, formatado do jeito certo — o campo continua funcionando
-  // normalmente (o toque nele ainda abre o calendário).
-  function atualizarDataExibida(){
-    if (inputValidade.value){
-      const d = new Date(inputValidade.value + 'T00:00:00');
-      dataDisplay.textContent = d.toLocaleDateString('pt-BR');
-      dataDisplay.classList.remove('vazio');
-    } else {
-      dataDisplay.textContent = 'Selecionar';
-      dataDisplay.classList.add('vazio');
-    }
-  }
-  atualizarDataExibida();
 
   inputQtd.addEventListener('input', () => { atualizarTotalLotes(); calcularDiferenca(); validarFormulario(); });
   inputValidade.addEventListener('input', () => {
     div.classList.toggle('tem-validade', !!inputValidade.value);
-    atualizarDataExibida();
   });
   btnRemover.addEventListener('click', () => {
     div.remove();
