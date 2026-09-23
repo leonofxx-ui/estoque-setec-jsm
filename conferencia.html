@@ -581,11 +581,12 @@ boxResultado.addEventListener('click', async (ev) => {
   boxResultado.style.display = 'none';
   mostrarInfoSistema(produtoSelecionado.quantidade);
 
-  // se a última contagem desse produto nessa loja estava VENCIDA, traz de
-  // volta os lotes inteiros dela (quantidade + validade de cada um) pra
-  // não precisar redigitar tudo de novo — produtos sem vencimento ou já
-  // dentro do prazo começam do zero, normalmente
-  const lotesAnteriores = await buscarLotesAnterioresSeVencidos(selectLoja.value, produtoSelecionado.produto);
+  // se a última contagem desse produto nessa loja já está vencida, vence
+  // esse ano ou vence no ano seguinte, traz de volta os lotes inteiros
+  // dela (quantidade + validade de cada um) pra não precisar redigitar
+  // tudo de novo — produtos sem vencimento ou com validade mais distante
+  // começam do zero, normalmente
+  const lotesAnteriores = await buscarLotesAnterioresSeRelevantes(selectLoja.value, produtoSelecionado.produto);
   if (lotesAnteriores && lotesAnteriores.length){
     preencherLotesExistentes(lotesAnteriores);
   } else {
@@ -596,7 +597,7 @@ boxResultado.addEventListener('click', async (ev) => {
   validarFormulario();
 });
 
-async function buscarLotesAnterioresSeVencidos(loja, produto){
+async function buscarLotesAnterioresSeRelevantes(loja, produto){
   try {
     const url = `${SUPABASE_URL}/rest/v1/conferencias?select=validade,lotes,quantidade_contada&loja=eq.${loja}&produto=eq.${encodeURIComponent(produto)}&order=criado_em.desc&limit=1`;
     const resp = await fetch(url, { headers: headers() });
@@ -609,11 +610,19 @@ async function buscarLotesAnterioresSeVencidos(loja, produto){
       : (registro.validade ? [{ quantidade: registro.quantidade_contada, validade: registro.validade }] : []);
     if (!lotesEfetivos.length) return null;
 
-    const hojeZerado = new Date();
-    hojeZerado.setHours(0, 0, 0, 0);
-    const temVencido = lotesEfetivos.some(l => l.validade && new Date(l.validade + 'T00:00:00') < hojeZerado);
+    // "relevante" = já vencido, vence esse ano, ou vence no ano seguinte
+    // (calculado a partir do ano atual, então não precisa mexer aqui na
+    // virada do ano). Isso NÃO muda o que conta como "vencido" pros
+    // alertas/relatórios — só decide se vale a pena lembrar a validade
+    // sozinho na próxima contagem.
+    const anoAtual = new Date().getFullYear();
+    const temRelevante = lotesEfetivos.some(l => {
+      if (!l.validade) return false;
+      const anoValidade = new Date(l.validade + 'T00:00:00').getFullYear();
+      return anoValidade <= anoAtual + 1;
+    });
 
-    return temVencido ? lotesEfetivos : null;
+    return temRelevante ? lotesEfetivos : null;
   } catch(e){ /* silencioso, não é crítico — só não preenche sozinho */ }
   return null;
 }
