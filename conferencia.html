@@ -197,6 +197,19 @@
     -webkit-appearance:none; appearance:none;
   }
   .lote-campos label{margin:0 0 4px;}
+  .lote-data-wrap{position:relative;}
+  .lote-data-wrap .lote-validade{
+    color:transparent; position:relative; z-index:1;
+  }
+  .lote-data-display{
+    position:absolute; left:12px; right:28px; top:0; bottom:0;
+    display:flex; align-items:center;
+    pointer-events:none; font-size:14.5px; color:var(--texto);
+    white-space:nowrap; overflow:hidden; z-index:0;
+  }
+  .lote-data-display.vazio{color:#9aa39e;}
+  .lote-qtd, .lote-validade{height:42px; padding-top:0; padding-bottom:0;}
+  .lote-remover{height:42px; display:flex; align-items:center; justify-content:center;}
   .lote-remover{
     flex:0 0 auto; width:auto; margin:0; padding:9px 10px; background:#f0f4f1;
     color:var(--texto-suave); box-shadow:none; border-radius:8px; font-size:13px;
@@ -451,7 +464,10 @@ function criarLinhaLote(validadeInicial = ''){
       </div>
       <div>
         <label>Validade (opcional)</label>
-        <input type="date" class="lote-validade" value="${validadeInicial}">
+        <div class="lote-data-wrap">
+          <input type="date" class="lote-validade" value="${validadeInicial}">
+          <span class="lote-data-display vazio">Selecionar</span>
+        </div>
       </div>
       <button type="button" class="lote-remover" style="display:none;">✕</button>
     </div>
@@ -459,10 +475,30 @@ function criarLinhaLote(validadeInicial = ''){
   const inputQtd = div.querySelector('.lote-qtd');
   const inputValidade = div.querySelector('.lote-validade');
   const btnRemover = div.querySelector('.lote-remover');
+  const dataDisplay = div.querySelector('.lote-data-display');
+
+  // O campo nativo de data mostra a data no formato do idioma do
+  // aparelho (ex: "30 de mai. de 2025"), o que não cabe bem na caixa.
+  // Pra sempre mostrar DD/MM/AAAA independente do celular, deixamos o
+  // texto do campo nativo invisível e escrevemos por cima um texto
+  // nosso, formatado do jeito certo — o campo continua funcionando
+  // normalmente (o toque nele ainda abre o calendário).
+  function atualizarDataExibida(){
+    if (inputValidade.value){
+      const d = new Date(inputValidade.value + 'T00:00:00');
+      dataDisplay.textContent = d.toLocaleDateString('pt-BR');
+      dataDisplay.classList.remove('vazio');
+    } else {
+      dataDisplay.textContent = 'Selecionar';
+      dataDisplay.classList.add('vazio');
+    }
+  }
+  atualizarDataExibida();
 
   inputQtd.addEventListener('input', () => { atualizarTotalLotes(); calcularDiferenca(); validarFormulario(); });
   inputValidade.addEventListener('input', () => {
     div.classList.toggle('tem-validade', !!inputValidade.value);
+    atualizarDataExibida();
   });
   btnRemover.addEventListener('click', () => {
     div.remove();
@@ -579,23 +615,56 @@ boxResultado.addEventListener('click', async (ev) => {
   boxResultado.style.display = 'none';
   mostrarInfoSistema(produtoSelecionado.quantidade);
 
-  // busca a validade da última contagem desse produto nessa loja (se
-  // existir) pra já preencher sozinho, sem precisar digitar de novo
-  const validadeAnterior = await buscarValidadeAnterior(selectLoja.value, produtoSelecionado.produto);
-  resetarLotes(validadeAnterior || '');
+  // se a última contagem desse produto nessa loja estava VENCIDA, traz de
+  // volta os lotes inteiros dela (quantidade + validade de cada um) pra
+  // não precisar redigitar tudo de novo — produtos sem vencimento ou já
+  // dentro do prazo começam do zero, normalmente
+  const lotesAnteriores = await buscarLotesAnterioresSeVencidos(selectLoja.value, produtoSelecionado.produto);
+  if (lotesAnteriores && lotesAnteriores.length){
+    preencherLotesExistentes(lotesAnteriores);
+  } else {
+    resetarLotes('');
+  }
 
   calcularDiferenca();
   validarFormulario();
 });
 
-async function buscarValidadeAnterior(loja, produto){
+async function buscarLotesAnterioresSeVencidos(loja, produto){
   try {
-    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=validade&loja=eq.${loja}&produto=eq.${encodeURIComponent(produto)}&validade=not.is.null&order=criado_em.desc&limit=1`;
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=validade,lotes,quantidade_contada&loja=eq.${loja}&produto=eq.${encodeURIComponent(produto)}&order=criado_em.desc&limit=1`;
     const resp = await fetch(url, { headers: headers() });
     const dados = await resp.json();
-    if (dados.length && dados[0].validade) return dados[0].validade;
+    if (!dados.length) return null;
+
+    const registro = dados[0];
+    const lotesEfetivos = (Array.isArray(registro.lotes) && registro.lotes.length)
+      ? registro.lotes
+      : (registro.validade ? [{ quantidade: registro.quantidade_contada, validade: registro.validade }] : []);
+    if (!lotesEfetivos.length) return null;
+
+    const hojeZerado = new Date();
+    hojeZerado.setHours(0, 0, 0, 0);
+    const temVencido = lotesEfetivos.some(l => l.validade && new Date(l.validade + 'T00:00:00') < hojeZerado);
+
+    return temVencido ? lotesEfetivos : null;
   } catch(e){ /* silencioso, não é crítico — só não preenche sozinho */ }
   return null;
+}
+
+function preencherLotesExistentes(lotes){
+  const container = document.getElementById('lotes-container');
+  container.innerHTML = '';
+  contadorLotes = 0;
+  lotes.forEach(l => {
+    const linha = criarLinhaLote(l.validade || '');
+    if (l.quantidade !== undefined && l.quantidade !== null){
+      linha.querySelector('.lote-qtd').value = l.quantidade;
+    }
+    container.appendChild(linha);
+  });
+  atualizarBotoesRemoverLote();
+  atualizarTotalLotes();
 }
 
 function mostrarInfoSistema(qtd){
@@ -967,31 +1036,6 @@ function desenharTabelaSituacao(doc, dados, startY){
   });
 }
 
-// --- tabela específica do Relatório de Vencidos: uma linha por LOTE
-// vencido (não por produto), mostrando só a quantidade daquele lote —
-// assim, quando um produto tem parte vencida e parte não, o relatório
-// mostra exatamente quanto está vencido, sem misturar com o total ---
-function desenharTabelaVencidosPorLote(doc, linhas, startY){
-  const corpo = linhas.map(l => [
-    l.produto,
-    l.unidade || '',
-    l.quantidade,
-    new Date(l.validade + 'T00:00:00').toLocaleDateString('pt-BR'),
-  ]);
-
-  doc.autoTable({
-    startY,
-    head: [['Produto', 'Un', 'Qtd. vencida', 'Validade']],
-    body: corpo,
-    styles: { fontSize: 8.5, cellPadding: 2.2 },
-    headStyles: { fillColor: [192, 57, 43], textColor: 255 },
-    columnStyles: {
-      2: { halign: 'right' },
-      3: { fontStyle: 'bold', textColor: [192, 57, 43] },
-    },
-  });
-}
-
 async function gerarPdfECompartilhar(doc, nomeArquivo, tituloCompartilhar){
   const pdfBlob = doc.output('blob');
   const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
@@ -1032,7 +1076,11 @@ document.getElementById('btn-relatorio-vencidos').addEventListener('click', asyn
 
     // explode cada produto nos seus lotes (produtos antigos sem "lotes"
     // caem no fallback de 1 lote só, usando a validade/quantidade que já
-    // tinham) e fica só com os lotes efetivamente vencidos
+    // tinham) e fica só com os lotes efetivamente vencidos. Cada lote vira
+    // uma linha no formato completo de sempre (Sistema/Contado/Situação),
+    // usando a quantidade DO LOTE em "Contado" (não o total do produto) —
+    // assim mantém as colunas completas mas mostra exatamente quanto
+    // daquele lote específico está vencido.
     const linhasVencidas = [];
     dadosTodos.forEach(d => {
       const lotesEfetivos = (Array.isArray(d.lotes) && d.lotes.length)
@@ -1040,7 +1088,14 @@ document.getElementById('btn-relatorio-vencidos').addEventListener('click', asyn
         : [{ quantidade: d.quantidade_contada, validade: d.validade }];
       lotesEfetivos.forEach(l => {
         if (l.validade && new Date(l.validade + 'T00:00:00') < hojeZerado){
-          linhasVencidas.push({ produto: d.produto, unidade: d.unidade, quantidade: l.quantidade, validade: l.validade });
+          linhasVencidas.push({
+            produto: d.produto,
+            unidade: d.unidade,
+            quantidade_sistema: d.quantidade_sistema,
+            quantidade_contada: l.quantidade,
+            validade: l.validade,
+            diferenca: 0,
+          });
         }
       });
     });
@@ -1072,7 +1127,7 @@ document.getElementById('btn-relatorio-vencidos').addEventListener('click', asyn
     doc.setFontSize(10);
     doc.text(`Total de itens vencidos: ${linhasVencidas.length}`, 14, 36);
 
-    desenharTabelaVencidosPorLote(doc, linhasVencidas, 41);
+    desenharTabelaSituacao(doc, linhasVencidas, 41);
 
     const nomeArquivo = `vencidos_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
     await gerarPdfECompartilhar(doc, nomeArquivo, `Vencidos - ${empresa} - ${dataFormatada}`);
