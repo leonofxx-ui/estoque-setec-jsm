@@ -1002,6 +1002,33 @@ function desenharTabelaSituacao(doc, dados, startY){
   });
 }
 
+// Pra produtos que têm mais de um lote (validades diferentes), divide em
+// uma linha por lote — cada linha mostra a quantidade E validade daquele
+// lote específico, mas repete o mesmo Sistema e a mesma Situação do
+// produto inteiro (a comparação de falta/sobra é sempre do total, não
+// faz sentido por lote). Produtos com 1 lote só (ou sem lotes) continuam
+// numa linha única, exatamente como já era.
+function explodirPorLote(dados){
+  const linhas = [];
+  dados.forEach(d => {
+    if (!Array.isArray(d.lotes) || d.lotes.length <= 1){
+      linhas.push(d);
+      return;
+    }
+    d.lotes.forEach(l => {
+      linhas.push({
+        produto: d.produto,
+        unidade: d.unidade,
+        quantidade_sistema: d.quantidade_sistema,
+        quantidade_contada: l.quantidade,
+        validade: l.validade,
+        diferenca: d.diferenca,
+      });
+    });
+  });
+  return linhas;
+}
+
 async function gerarPdfECompartilhar(doc, nomeArquivo, tituloCompartilhar){
   const pdfBlob = doc.output('blob');
   const pdfFile = new File([pdfBlob], nomeArquivo, { type: 'application/pdf' });
@@ -1205,8 +1232,9 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
     doc.setFontSize(10);
     doc.text(`Total de itens conferidos: ${total}   |   Divergências: ${divergentes}   |   Vencidos: ${vencidosCount}`, 14, 36);
 
-    // --- tabela ---
-    desenharTabelaSituacao(doc, dados, 41);
+    // --- tabela --- (produtos com mais de um lote aparecem em linhas
+    // separadas, uma por validade, sem afetar os totais do resumo acima)
+    desenharTabelaSituacao(doc, explodirPorLote(dados), 41);
 
     const nomeArquivo = `conferencia_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
 
