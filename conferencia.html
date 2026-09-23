@@ -190,9 +190,12 @@
     padding:10px 12px; margin-top:8px;
   }
   .lote-linha.tem-validade{border-color:var(--vermelho);}
-  .lote-campos{display:flex; gap:8px; align-items:flex-end;}
+  .lote-campos{display:flex; gap:8px; align-items:flex-start;}
   .lote-campos > div{flex:1; min-width:0;}
-  .lote-campos input{min-width:0;}
+  .lote-campos input{
+    min-width:0; height:42px; box-sizing:border-box;
+    -webkit-appearance:none; appearance:none;
+  }
   .lote-campos label{margin:0 0 4px;}
   .lote-remover{
     flex:0 0 auto; width:auto; margin:0; padding:9px 10px; background:#f0f4f1;
@@ -896,6 +899,23 @@ function formatarQtd(valor){
   return String(valor);
 }
 
+function formatarValidadesExibicao(d){
+  // Quando o produto tem mais de um lote com validades diferentes, mostra
+  // todas (separadas por vírgula) em vez de só a mais antiga — senão dava
+  // a entender que a QUANTIDADE TOTAL vencia numa data só, escondendo que
+  // só parte do lote está vencida.
+  if (Array.isArray(d.lotes) && d.lotes.length > 1){
+    const unicas = [...new Set(d.lotes.map(l => l.validade).filter(Boolean))];
+    if (unicas.length > 1){
+      return unicas
+        .sort()
+        .map(v => new Date(v + 'T00:00:00').toLocaleDateString('pt-BR'))
+        .join(', ');
+    }
+  }
+  return d.validade ? new Date(d.validade + 'T00:00:00').toLocaleDateString('pt-BR') : '';
+}
+
 function desenharTabelaSituacao(doc, dados, startY){
   const hojeZerado = new Date();
   hojeZerado.setHours(0, 0, 0, 0);
@@ -912,7 +932,7 @@ function desenharTabelaSituacao(doc, dados, startY){
     // coluna própria e estreita só pro aviso de vencido, assim a coluna de
     // Validade fica sempre alinhada (com ou sem aviso na linha)
     const aviso = vencido ? '!' : '';
-    const validadeTxt = d.validade ? new Date(d.validade+'T00:00:00').toLocaleDateString('pt-BR') : '';
+    const validadeTxt = formatarValidadesExibicao(d);
     return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, aviso, validadeTxt, situacao];
   });
 
@@ -944,6 +964,31 @@ function desenharTabelaSituacao(doc, dados, startY){
         else { data.cell.styles.textColor = [138, 109, 0]; }
       }
     }
+  });
+}
+
+// --- tabela específica do Relatório de Vencidos: uma linha por LOTE
+// vencido (não por produto), mostrando só a quantidade daquele lote —
+// assim, quando um produto tem parte vencida e parte não, o relatório
+// mostra exatamente quanto está vencido, sem misturar com o total ---
+function desenharTabelaVencidosPorLote(doc, linhas, startY){
+  const corpo = linhas.map(l => [
+    l.produto,
+    l.unidade || '',
+    l.quantidade,
+    new Date(l.validade + 'T00:00:00').toLocaleDateString('pt-BR'),
+  ]);
+
+  doc.autoTable({
+    startY,
+    head: [['Produto', 'Un', 'Qtd. vencida', 'Validade']],
+    body: corpo,
+    styles: { fontSize: 8.5, cellPadding: 2.2 },
+    headStyles: { fillColor: [192, 57, 43], textColor: 255 },
+    columnStyles: {
+      2: { halign: 'right' },
+      3: { fontStyle: 'bold', textColor: [192, 57, 43] },
+    },
   });
 }
 
@@ -984,18 +1029,30 @@ document.getElementById('btn-relatorio-vencidos').addEventListener('click', asyn
 
     const hojeZerado = new Date();
     hojeZerado.setHours(0, 0, 0, 0);
-    const dados = dadosTodos.filter(d => {
-      if (!d.validade) return false;
-      return new Date(d.validade + 'T00:00:00') < hojeZerado;
-    });
 
-    if (!dados.length){
+    // explode cada produto nos seus lotes (produtos antigos sem "lotes"
+    // caem no fallback de 1 lote só, usando a validade/quantidade que já
+    // tinham) e fica só com os lotes efetivamente vencidos
+    const linhasVencidas = [];
+    dadosTodos.forEach(d => {
+      const lotesEfetivos = (Array.isArray(d.lotes) && d.lotes.length)
+        ? d.lotes
+        : [{ quantidade: d.quantidade_contada, validade: d.validade }];
+      lotesEfetivos.forEach(l => {
+        if (l.validade && new Date(l.validade + 'T00:00:00') < hojeZerado){
+          linhasVencidas.push({ produto: d.produto, unidade: d.unidade, quantidade: l.quantidade, validade: l.validade });
+        }
+      });
+    });
+    linhasVencidas.sort((a, b) => a.produto.localeCompare(b.produto, 'pt-BR'));
+
+    if (!linhasVencidas.length){
       alert('Nenhum produto vencido encontrado hoje para essa loja.');
       return;
     }
 
     const dataFormatada = hoje.toLocaleDateString('pt-BR');
-    const empresa = dados[0].empresa;
+    const empresa = dadosTodos[0].empresa;
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
@@ -1013,9 +1070,9 @@ document.getElementById('btn-relatorio-vencidos').addEventListener('click', asyn
 
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
-    doc.text(`Total de produtos vencidos: ${dados.length}`, 14, 36);
+    doc.text(`Total de itens vencidos: ${linhasVencidas.length}`, 14, 36);
 
-    desenharTabelaSituacao(doc, dados, 41);
+    desenharTabelaVencidosPorLote(doc, linhasVencidas, 41);
 
     const nomeArquivo = `vencidos_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
     await gerarPdfECompartilhar(doc, nomeArquivo, `Vencidos - ${empresa} - ${dataFormatada}`);
