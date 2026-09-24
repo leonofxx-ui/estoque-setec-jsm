@@ -114,7 +114,6 @@
   .btn-whats{background:#25d366; color:#fff; box-shadow:0 4px 12px rgba(37,211,102,.3);}
   .btn-vencidos{background:var(--vermelho); color:#fff; box-shadow:0 4px 12px rgba(192,57,43,.3);}
   .btn-pdf{background:var(--dourado); color:#3a2f00; box-shadow:0 4px 12px rgba(201,162,39,.3);}
-  .btn-recorrente{background:var(--verde-escuro); color:#fff; box-shadow:0 4px 12px rgba(15,61,46,.25); margin-top:0;}
 
   .rec-item{
     display:flex; justify-content:space-between; align-items:center;
@@ -318,16 +317,7 @@
     <div id="lista-conferencias"><div class="loading">Carregando...</div></div>
 
     <button class="btn-pdf" id="btn-pdf">📄 Finalizar conferência (gerar PDF)</button>
-    <button class="btn-whats" id="btn-relatorio-divergencias" style="display:none;">📋 Relatório de Divergências (gerar PDF)</button>
     <button class="btn-vencidos" id="btn-relatorio-vencidos" style="display:none;">⚠️ Relatório de Vencidos (gerar PDF)</button>
-  </div>
-
-  <!-- DIVERGÊNCIAS RECORRENTES -->
-  <div class="card">
-    <h2>Divergências recorrentes</h2>
-    <p style="font-size:12.5px; color:var(--texto-suave); margin:-8px 0 12px;">Produtos que mais divergiram ao longo do tempo</p>
-    <button class="btn-recorrente" id="btn-recorrente">🔎 Ver divergências recorrentes</button>
-    <div id="lista-recorrentes" style="display:none; margin-top:14px;"></div>
   </div>
 
 </div>
@@ -895,15 +885,12 @@ async function carregarConferencias(){
 document.getElementById('filtro-loja').addEventListener('change', carregarConferencias);
 document.getElementById('filtro-tipo').addEventListener('change', carregarConferencias);
 
-// --- mostra/esconde os botões de compartilhar conforme existir ou não
-// divergência/vencido HOJE na loja filtrada, pra não poluir a tela em
-// dias normais ---
+// --- mostra/esconde o botão de vencidos conforme existir ou não vencido
+// HOJE na loja filtrada, pra não poluir a tela em dias normais ---
 async function atualizarVisibilidadeAlertas(loja){
-  const btnDivergencia = document.getElementById('btn-relatorio-divergencias');
   const btnVencidos = document.getElementById('btn-relatorio-vencidos');
 
   if (!loja){
-    btnDivergencia.style.display = 'none';
     btnVencidos.style.display = 'none';
     return;
   }
@@ -911,29 +898,27 @@ async function atualizarVisibilidadeAlertas(loja){
   try {
     const hoje = new Date();
     const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
-    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=diferenca,validade&loja=eq.${loja}&criado_em=gte.${inicioDia}`;
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=validade&loja=eq.${loja}&criado_em=gte.${inicioDia}`;
     const resp = await fetch(url, { headers: headers() });
     const dados = await resp.json();
 
     const hojeZerado = new Date();
     hojeZerado.setHours(0, 0, 0, 0);
 
-    const temDivergencia = dados.some(d => d.diferenca !== 0);
     const temVencido = dados.some(d => {
       if (!d.validade) return false;
       const dataValidade = new Date(d.validade + 'T00:00:00');
       return dataValidade < hojeZerado;
     });
 
-    btnDivergencia.style.display = temDivergencia ? 'block' : 'none';
     btnVencidos.style.display = temVencido ? 'block' : 'none';
   } catch(e){
     console.error(e);
   }
 }
 
-// --- funções auxiliares reutilizáveis pros três PDFs (conferência completa,
-// relatório de divergências, relatório de vencidos) ---
+// --- funções auxiliares reutilizáveis pros dois PDFs (conferência completa
+// e relatório de vencidos) ---
 function formatarQtd(valor){
   // números de 1 a 9 ganham um zero na frente (01, 02... 09), pra ficar
   // com dois dígitos igual os de 10 pra cima
@@ -964,48 +949,71 @@ function desenharTabelaSituacao(doc, dados, startY){
   const hojeZerado = new Date();
   hojeZerado.setHours(0, 0, 0, 0);
 
-  const linhas = dados.map(d => {
-    const dataValidade = d.validade ? new Date(d.validade + 'T00:00:00') : null;
-    const vencido = !!(dataValidade && dataValidade < hojeZerado);
+  // Categoria de urgência da validade de uma linha (considera todos os
+  // lotes quando o produto tem mais de um, usando a mais urgente entre
+  // eles pra colorir a célula inteira): 'vencido' (vermelho) > 'esteAno'
+  // (amarelo escuro) > 'proximoAno' (azul escuro) > null (cor normal).
+  function categoriaValidadeLinha(d){
+    const anoAtual = hojeZerado.getFullYear();
+    function categoriaData(v){
+      if (!v) return null;
+      const dt = new Date(v + 'T00:00:00');
+      if (dt < hojeZerado) return 'vencido';
+      const ano = dt.getFullYear();
+      if (ano === anoAtual) return 'esteAno';
+      if (ano === anoAtual + 1) return 'proximoAno';
+      return null;
+    }
+    const datas = (Array.isArray(d.lotes) && d.lotes.length > 1)
+      ? d.lotes.map(l => l.validade)
+      : [d.validade];
+    const categorias = datas.map(categoriaData).filter(Boolean);
+    if (categorias.includes('vencido')) return 'vencido';
+    if (categorias.includes('esteAno')) return 'esteAno';
+    if (categorias.includes('proximoAno')) return 'proximoAno';
+    return null;
+  }
 
+  const CORES_VALIDADE = {
+    vencido: [192, 57, 43],
+    esteAno: [138, 109, 0],
+    proximoAno: [29, 78, 137],
+  };
+
+  const linhas = dados.map(d => {
     let situacao;
     if (d.diferenca === 0) situacao = 'OK';
     else if (d.diferenca < 0) situacao = `FALTA ${formatarQtd(Math.abs(d.diferenca))}`;
     else situacao = `SOBRA ${formatarQtd(d.diferenca)}`;
 
-    // coluna própria e estreita só pro aviso de vencido, assim a coluna de
-    // Validade fica sempre alinhada (com ou sem aviso na linha)
-    const aviso = vencido ? '!' : '';
     const validadeTxt = formatarValidadesExibicao(d);
-    return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, aviso, validadeTxt, situacao];
+    return [d.produto, d.unidade || '', d.quantidade_sistema, d.quantidade_contada, validadeTxt, situacao];
   });
 
   doc.autoTable({
     startY,
-    head: [['Produto', 'Un', 'Sistema', 'Contado', '', 'Validade', 'Situação']],
+    head: [['Produto', 'Un', 'Sistema', 'Contado', 'Validade', 'Situação']],
     body: linhas,
     styles: { fontSize: 8.5, cellPadding: 2.2 },
     headStyles: { fillColor: [15, 61, 46], textColor: 255 },
     columnStyles: {
-      4: { halign: 'center', cellWidth: 8, fontStyle: 'bold' },
-      6: { fontStyle: 'bold' }
+      5: { fontStyle: 'bold' }
     },
     didParseCell: (data) => {
       if (data.section !== 'body') return;
 
-      if (data.column.index === 4 && data.cell.raw === '!'){
-        data.cell.styles.textColor = [192, 57, 43];
+      if (data.column.index === 4){
+        const categoria = categoriaValidadeLinha(dados[data.row.index]);
+        if (categoria){
+          data.cell.styles.textColor = CORES_VALIDADE[categoria];
+          data.cell.styles.fontStyle = 'bold';
+        }
       }
 
-      if (data.column.index === 5 && data.row.raw[4] === '!'){
-        data.cell.styles.textColor = [192, 57, 43];
-      }
-
-      if (data.column.index === 6){
+      if (data.column.index === 5){
         const texto = data.cell.raw;
-        if (texto === 'OK'){ data.cell.styles.textColor = [46, 125, 79]; }
-        else if (texto.startsWith('FALTA')){ data.cell.styles.textColor = [192, 57, 43]; }
-        else { data.cell.styles.textColor = [138, 109, 0]; }
+        // FALTA e SOBRA (qualquer divergência) ficam vermelho; só OK é verde
+        data.cell.styles.textColor = texto === 'OK' ? [46, 125, 79] : [192, 57, 43];
       }
     }
   });
@@ -1260,131 +1268,6 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = '📄 Finalizar conferência (gerar PDF)';
-  }
-});
-
-// --- relatório de divergências (só HOJE, respeitando o filtro de loja atual) ---
-document.getElementById('btn-relatorio-divergencias').addEventListener('click', async () => {
-  const loja = document.getElementById('filtro-loja').value;
-  if (!loja){
-    alert('Escolha uma loja no filtro acima antes de gerar o PDF.');
-    return;
-  }
-
-  const btn = document.getElementById('btn-relatorio-divergencias');
-  btn.disabled = true;
-  btn.textContent = 'Gerando PDF...';
-
-  try {
-    const hoje = new Date();
-    const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate()).toISOString();
-    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=*&loja=eq.${loja}&criado_em=gte.${inicioDia}&order=produto.asc`;
-    const resp = await fetch(url, { headers: headers() });
-    const dados = (await resp.json()).filter(d => d.diferenca !== 0);
-
-    if (!dados.length){
-      alert('Nenhuma divergência encontrada hoje para essa loja.');
-      return;
-    }
-
-    const dataFormatada = hoje.toLocaleDateString('pt-BR');
-    const empresa = dados[0].empresa;
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-
-    doc.setFillColor(15, 61, 46);
-    doc.rect(0, 0, 210, 28, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.text('Relatório de Divergências', 14, 12);
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.text(`Loja: ${empresa}`, 14, 19);
-    doc.text(`Data: ${dataFormatada}`, 14, 25);
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-    doc.text(`Total de divergências: ${dados.length}`, 14, 36);
-
-    desenharTabelaSituacao(doc, dados, 41);
-
-    const nomeArquivo = `divergencias_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
-    await gerarPdfECompartilhar(doc, nomeArquivo, `Divergências - ${empresa} - ${dataFormatada}`);
-  } catch(e){
-    alert('Erro ao gerar o PDF. Tente de novo.');
-    console.error(e);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '📋 Relatório de Divergências (gerar PDF)';
-  }
-});
-
-// --- divergências recorrentes (histórico completo, agrupado por loja+produto) ---
-document.getElementById('btn-recorrente').addEventListener('click', async () => {
-  const btn = document.getElementById('btn-recorrente');
-  const lista = document.getElementById('lista-recorrentes');
-
-  if (lista.style.display === 'block'){
-    lista.style.display = 'none';
-    btn.textContent = '🔎 Ver divergências recorrentes';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Carregando...';
-  try {
-    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=loja,empresa,produto,unidade,diferenca,criado_em&diferenca=neq.0&order=criado_em.desc&limit=500`;
-    const resp = await fetch(url, { headers: headers() });
-    const dados = await resp.json();
-
-    if (!dados.length){
-      lista.innerHTML = '<div class="vazio">Nenhuma divergência registrada ainda.</div>';
-      lista.style.display = 'block';
-      btn.textContent = '🔎 Ver divergências recorrentes';
-      return;
-    }
-
-    const agrupado = {};
-    dados.forEach(d => {
-      const chave = `${d.loja}||${d.produto}`;
-      if (!agrupado[chave]){
-        agrupado[chave] = { empresa: d.empresa, produto: d.produto, unidade: d.unidade, count: 0, ultima: d.criado_em };
-      }
-      agrupado[chave].count += 1;
-      if (d.criado_em > agrupado[chave].ultima) agrupado[chave].ultima = d.criado_em;
-    });
-
-    const ranking = Object.values(agrupado)
-      .filter(item => item.count > 1) // só mostra o que já divergiu mais de uma vez
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 15);
-
-    if (!ranking.length){
-      lista.innerHTML = '<div class="vazio">Nenhum produto divergiu mais de uma vez ainda — bom sinal!</div>';
-    } else {
-      lista.innerHTML = ranking.map(item => {
-        const dataUlt = new Date(item.ultima).toLocaleDateString('pt-BR');
-        return `
-          <div class="rec-item">
-            <div>
-              <div class="rec-nome">${item.produto}</div>
-              <div class="rec-meta">${item.empresa} · última vez em ${dataUlt}</div>
-            </div>
-            <span class="rec-count">${item.count}x</span>
-          </div>`;
-      }).join('');
-    }
-
-    lista.style.display = 'block';
-    btn.textContent = '🔎 Ocultar divergências recorrentes';
-  } catch(e){
-    lista.innerHTML = '<div class="vazio">Erro ao carregar</div>';
-    lista.style.display = 'block';
-    console.error(e);
-  } finally {
-    btn.disabled = false;
   }
 });
 
