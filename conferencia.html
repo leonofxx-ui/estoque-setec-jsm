@@ -212,9 +212,21 @@
   }
   .lote-total .lbl{font-size:12.5px; color:var(--texto-suave); font-weight:700;}
   .lote-total .val{font-size:17px; color:var(--verde-ok); font-weight:800;}
+  #toast-salvo{
+    position:fixed; left:50%; bottom:28px; z-index:9999;
+    transform:translate(-50%,20px); opacity:0; pointer-events:none;
+    background:#2e7d4f; color:#fff; border-radius:12px; padding:12px 18px;
+    box-shadow:0 6px 18px rgba(0,0,0,.25); text-align:center;
+    max-width:calc(100vw - 32px); transition:opacity .25s ease, transform .25s ease;
+  }
+  #toast-salvo.show{opacity:1; transform:translate(-50%,0);}
+  #toast-salvo .t1{font-size:15px; font-weight:800;}
+  #toast-salvo .t2{font-size:12.5px; opacity:.92; margin-top:2px;}
 </style>
 </head>
 <body>
+
+<div id="toast-salvo" role="status" aria-live="polite"></div>
 
 <header>
   <div class="topo">
@@ -632,6 +644,7 @@ function preencherLotesExistentes(lotes){
   atualizarTotalLotes();
 }
 
+
 function mostrarInfoSistema(qtd){
   document.getElementById('info-sistema').style.display = 'flex';
   document.getElementById('qtd-sistema').textContent = qtd;
@@ -671,6 +684,22 @@ function validarFormulario(){
   const ok = getNomeEncarregado() && selectLoja.value &&
              produtoSelecionado && lotes.length > 0;
   document.getElementById('btn-salvar').disabled = !ok;
+}
+
+// --- aviso "✓ Contagem salva" ---
+let toastTimer = null;
+function mostrarToastSalvo(produto, total, unidade){
+  const el = document.getElementById('toast-salvo');
+  if (!el) return;
+  const qtd = Number(total).toLocaleString('pt-BR', {maximumFractionDigits: 3});
+  el.innerHTML = '';
+  const t1 = document.createElement('div'); t1.className = 't1'; t1.textContent = '✓ Contagem salva';
+  const t2 = document.createElement('div'); t2.className = 't2';
+  t2.textContent = `${produto} · ${qtd}${unidade ? ' ' + unidade : ''}`;
+  el.appendChild(t1); el.appendChild(t2);
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
 // --- salvar contagem ---
@@ -751,6 +780,11 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
       if (!resp.ok) throw new Error(await resp.text());
     }
 
+    // guarda os dados pro aviso antes de limpar o formulário
+    const avisoProduto = produto;
+    const avisoTotal = totalContado;
+    const avisoUnidade = produtoSelecionado.unidade || '';
+
     // limpa só o produto/lotes, mantém nome e loja pra próxima contagem
     inputBusca.value = '';
     produtoSelecionado = null;
@@ -758,6 +792,7 @@ document.getElementById('btn-salvar').addEventListener('click', async () => {
     desmarcarFinalizada(loja); // uma nova contagem foi salva, volta a mostrar o painel normalmente
     carregarConferencias();
     atualizarResumoDia();
+    mostrarToastSalvo(avisoProduto, avisoTotal, avisoUnidade);
   } catch(e){
     alert('Erro ao salvar. Tente de novo.');
     console.error(e);
