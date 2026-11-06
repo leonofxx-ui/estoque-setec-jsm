@@ -212,6 +212,16 @@
   }
   .lote-total .lbl{font-size:12.5px; color:var(--texto-suave); font-weight:700;}
   .lote-total .val{font-size:17px; color:var(--verde-ok); font-weight:800;}
+  #resultado-busca .sep{
+    padding:8px 12px; font-size:11.5px; font-weight:700; color:var(--texto-suave);
+    background:#f4f6f5; cursor:default;
+  }
+  #resultado-busca .sep:hover{background:#f4f6f5;}
+  #resultado-busca .item-manual{color:var(--verde-escuro); font-weight:700;}
+  .tag-fora{
+    display:inline-block; margin-left:6px; padding:2px 8px; border-radius:20px;
+    background:#fff6e0; color:#8a6d00; font-size:11px; font-weight:800;
+  }
   #toast-salvo{
     position:fixed; left:50%; bottom:28px; z-index:9999;
     transform:translate(-50%,20px); opacity:0; pointer-events:none;
@@ -282,6 +292,19 @@
     <div class="info-sistema" id="info-sistema">
       <span>Estoque no sistema:</span>
       <b id="qtd-sistema">-</b>
+    </div>
+
+    <div id="box-unidade-manual" style="display:none;">
+      <label>Unidade do produto (fora do sistema)</label>
+      <select id="unidade-manual">
+        <option value="KG">KG</option>
+        <option value="LT">LT</option>
+        <option value="UN">UN</option>
+        <option value="PC">PC</option>
+        <option value="CX">CX</option>
+        <option value="SC">SC</option>
+        <option value="GL">GL</option>
+      </select>
     </div>
 
     <label>Quantidade contada</label>
@@ -558,7 +581,32 @@ async function buscarProduto(termo, loja){
     const resp = await fetch(url, { headers: headers() });
     const dados = await resp.json();
     if (!dados.length){
-      boxResultado.innerHTML = '<div style="color:#999;">Nenhum produto encontrado nessa loja</div>';
+      // não está no estoque dessa loja (ex: zerado no sistema, mas existe
+      // fisicamente). Procura o mesmo nome nas outras lojas pra reaproveitar
+      // nome e unidade, e sempre oferece a opção de usar o nome digitado.
+      let outras = [];
+      try {
+        const urlOutras = `${SUPABASE_URL}/rest/v1/estoque_fisico?produto=ilike.*${encodeURIComponent(termo)}*&select=produto,unidade&limit=60&order=produto`;
+        const respOutras = await fetch(urlOutras, { headers: headers() });
+        const dadosOutras = await respOutras.json();
+        const vistos = new Set();
+        (Array.isArray(dadosOutras) ? dadosOutras : []).forEach(p => {
+          if (vistos.has(p.produto)) return;
+          vistos.add(p.produto);
+          outras.push(p);
+        });
+        outras = outras.slice(0, 8);
+      } catch(e){ console.error(e); }
+
+      let html = '<div class="sep" style="color:#999;">Nenhum produto encontrado nessa loja (estoque zerado no sistema)</div>';
+      html += `<div class="item-manual" data-manual="1" data-termo="${encodeURIComponent(termo)}">➕ Contar “${termo.toUpperCase().replace(/</g,'&lt;')}” fora do sistema</div>`;
+      if (outras.length){
+        html += '<div class="sep">Mesmo produto em outras lojas — toque para contar aqui:</div>';
+        html += outras.map(p =>
+          `<div data-produto="${encodeURIComponent(p.produto)}" data-un="${p.unidade||''}" data-qtd="0" data-fora="1">${destacarTermo(p.produto, termo)} <span style="color:#999;">(${p.unidade||''})</span></div>`
+        ).join('');
+      }
+      boxResultado.innerHTML = html;
       boxResultado.style.display = 'block';
       return;
     }
@@ -572,16 +620,37 @@ async function buscarProduto(termo, loja){
 }
 
 boxResultado.addEventListener('click', async (ev) => {
-  const alvo = ev.target.closest('div[data-produto]');
+  const alvoManual = ev.target.closest('div[data-manual]');
+  const alvo = alvoManual || ev.target.closest('div[data-produto]');
   if (!alvo) return;
-  produtoSelecionado = {
-    produto: decodeURIComponent(alvo.dataset.produto),
-    unidade: alvo.dataset.un,
-    quantidade: parseFloat(alvo.dataset.qtd)
-  };
+
+  const boxUn = document.getElementById('box-unidade-manual');
+  const selUn = document.getElementById('unidade-manual');
+
+  if (alvoManual){
+    // produto que não existe no sistema dessa loja: estoque do sistema = 0
+    produtoSelecionado = {
+      produto: decodeURIComponent(alvo.dataset.termo).trim().toUpperCase(),
+      unidade: selUn.value,
+      quantidade: 0,
+      foraDoSistema: true
+    };
+  } else {
+    produtoSelecionado = {
+      produto: decodeURIComponent(alvo.dataset.produto),
+      unidade: alvo.dataset.un,
+      quantidade: parseFloat(alvo.dataset.qtd),
+      foraDoSistema: alvo.dataset.fora === '1'
+    };
+  }
   inputBusca.value = produtoSelecionado.produto;
   boxResultado.style.display = 'none';
   mostrarInfoSistema(produtoSelecionado.quantidade);
+  // só pede a unidade quando o nome foi digitado na mão
+  boxUn.style.display = alvoManual ? 'block' : 'none';
+  if (produtoSelecionado.foraDoSistema){
+    document.getElementById('qtd-sistema').innerHTML = '0 <span class="tag-fora">fora do sistema</span>';
+  }
 
   // se a última contagem desse produto nessa loja já está vencida, vence
   // esse ano ou vence no ano seguinte, traz de volta os lotes inteiros
@@ -597,6 +666,13 @@ boxResultado.addEventListener('click', async (ev) => {
 
   calcularDiferenca();
   validarFormulario();
+});
+
+document.getElementById('unidade-manual').addEventListener('change', (ev) => {
+  if (produtoSelecionado && produtoSelecionado.foraDoSistema){
+    produtoSelecionado.unidade = ev.target.value;
+    calcularDiferenca();
+  }
 });
 
 async function buscarLotesAnterioresSeRelevantes(loja, produto){
@@ -651,6 +727,7 @@ function mostrarInfoSistema(qtd){
 }
 function esconderInfoSistema(){
   document.getElementById('info-sistema').style.display = 'none';
+  document.getElementById('box-unidade-manual').style.display = 'none';
   document.getElementById('diferenca-box').style.display = 'none';
   document.getElementById('lotes-container').innerHTML = '';
   document.getElementById('lote-total-box').style.display = 'none';
