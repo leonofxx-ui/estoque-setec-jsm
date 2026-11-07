@@ -569,6 +569,20 @@ inputBusca.addEventListener('input', () => {
   debounceBusca = setTimeout(() => buscarProduto(termo, loja), 300);
 });
 
+// tira o sufixo de código/CST e o princípio ativo do final do nome, igual
+// ao que o estoque das lojas já faz (ex: "PRODUTO - 840 - (ATIVO)" -> "PRODUTO")
+function nomeBaseProduto(produto){
+  let d = String(produto || '').trim();
+  let mudou = true;
+  while (mudou){
+    mudou = false;
+    const a = d.replace(/\s*-\s*\([^)]*\)\s*$/, '');
+    const b = a.replace(/\s*-\s*(?:BART-\s*)?\d{2,4}\s*$/i, '');
+    if (b !== d){ d = b; mudou = true; }
+  }
+  return d.trim();
+}
+
 function destacarTermo(texto, termo){
   if (!termo) return texto;
   const escapado = termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -586,24 +600,42 @@ async function buscarProduto(termo, loja){
       // nome e unidade, e sempre oferece a opção de usar o nome digitado.
       let outras = [];
       try {
-        const urlOutras = `${SUPABASE_URL}/rest/v1/estoque_fisico?produto=ilike.*${encodeURIComponent(termo)}*&select=produto,unidade&limit=60&order=produto`;
-        const respOutras = await fetch(urlOutras, { headers: headers() });
-        const dadosOutras = await respOutras.json();
-        const vistos = new Set();
-        (Array.isArray(dadosOutras) ? dadosOutras : []).forEach(p => {
-          if (vistos.has(p.produto)) return;
-          vistos.add(p.produto);
-          outras.push(p);
+        const enc = encodeURIComponent(termo);
+        const filtro = `produto=ilike.*${enc}*`;
+        // procura o nome em todas as fontes que o sistema já tem: estoque das
+        // outras lojas, saldo geral (Consulta de Saldo), terceiros e contagens
+        // anteriores (um produto já contado antes tem nome e unidade salvos)
+        const fontes = [
+          `estoque_fisico?${filtro}&select=produto,unidade&limit=60&order=produto`,
+          `estoque?${filtro}&select=produto&limit=60&order=produto`,
+          `estoque_terceiros?${filtro}&select=produto,unidade&limit=60&order=produto`,
+          `conferencias?${filtro}&select=produto,unidade&limit=60&order=criado_em.desc`,
+        ];
+        const resultados = await Promise.all(fontes.map(f =>
+          fetch(`${SUPABASE_URL}/rest/v1/${f}`, { headers: headers() })
+            .then(r => r.json()).catch(() => [])
+        ));
+        const vistos = new Map();
+        resultados.forEach(lista => {
+          if (!Array.isArray(lista)) return;
+          lista.forEach(p => {
+            if (!p || !p.produto) return;
+            const nome = nomeBaseProduto(p.produto);
+            const chave = nome.toUpperCase();
+            const atual = vistos.get(chave);
+            if (!atual) vistos.set(chave, { produto: nome, unidade: p.unidade || '' });
+            else if (!atual.unidade && p.unidade) atual.unidade = p.unidade;
+          });
         });
-        outras = outras.slice(0, 8);
+        outras = [...vistos.values()].slice(0, 10);
       } catch(e){ console.error(e); }
 
       let html = '<div class="sep" style="color:#999;">Nenhum produto encontrado nessa loja (estoque zerado no sistema)</div>';
       html += `<div class="item-manual" data-manual="1" data-termo="${encodeURIComponent(termo)}">➕ Contar “${termo.toUpperCase().replace(/</g,'&lt;')}” fora do sistema</div>`;
       if (outras.length){
-        html += '<div class="sep">Mesmo produto em outras lojas — toque para contar aqui:</div>';
+        html += '<div class="sep">Produtos com esse nome no sistema — toque para contar aqui:</div>';
         html += outras.map(p =>
-          `<div data-produto="${encodeURIComponent(p.produto)}" data-un="${p.unidade||''}" data-qtd="0" data-fora="1">${destacarTermo(p.produto, termo)} <span style="color:#999;">(${p.unidade||''})</span></div>`
+          `<div data-produto="${encodeURIComponent(p.produto)}" data-un="${p.unidade||''}" data-qtd="0" data-fora="1">${destacarTermo(p.produto, termo)}${p.unidade ? ` <span style="color:#999;">(${p.unidade})</span>` : ''}</div>`
         ).join('');
       }
       boxResultado.innerHTML = html;
@@ -626,6 +658,7 @@ boxResultado.addEventListener('click', async (ev) => {
 
   const boxUn = document.getElementById('box-unidade-manual');
   const selUn = document.getElementById('unidade-manual');
+  let precisaUnidade = !!alvoManual;
 
   if (alvoManual){
     // produto que não existe no sistema dessa loja: estoque do sistema = 0
@@ -636,18 +669,20 @@ boxResultado.addEventListener('click', async (ev) => {
       foraDoSistema: true
     };
   } else {
+    const semUnidade = alvo.dataset.fora === '1' && !alvo.dataset.un;
     produtoSelecionado = {
       produto: decodeURIComponent(alvo.dataset.produto),
-      unidade: alvo.dataset.un,
+      unidade: semUnidade ? selUn.value : alvo.dataset.un,
       quantidade: parseFloat(alvo.dataset.qtd),
       foraDoSistema: alvo.dataset.fora === '1'
     };
+    precisaUnidade = semUnidade;
   }
   inputBusca.value = produtoSelecionado.produto;
   boxResultado.style.display = 'none';
   mostrarInfoSistema(produtoSelecionado.quantidade);
   // só pede a unidade quando o nome foi digitado na mão
-  boxUn.style.display = alvoManual ? 'block' : 'none';
+  boxUn.style.display = precisaUnidade ? 'block' : 'none';
   if (produtoSelecionado.foraDoSistema){
     document.getElementById('qtd-sistema').innerHTML = '0 <span class="tag-fora">fora do sistema</span>';
   }
