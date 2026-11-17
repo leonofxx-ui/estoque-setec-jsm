@@ -1077,6 +1077,31 @@ function formatarQtd(valor){
   return String(valor);
 }
 
+// legenda das cores de validade (usada nos PDFs que têm as 3 cores)
+function desenharLegendaCores(doc, y){
+  const ano = new Date().getFullYear();
+  const itens = [
+    { cor: [192, 57, 43], texto: 'Vencido' },
+    { cor: [138, 109, 0], texto: `Vence em ${ano}` },
+    { cor: [29, 78, 137], texto: `Vence em ${ano + 1}` },
+  ];
+  doc.setFontSize(9);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(90, 107, 99);
+  const rotulo = 'Legenda das validades:';
+  doc.text(rotulo, 14, y + 3);
+  let x = 14 + doc.getTextWidth(rotulo) + 5;
+  itens.forEach(it => {
+    doc.setFillColor(it.cor[0], it.cor[1], it.cor[2]);
+    doc.rect(x, y, 3.5, 3.5, 'F');
+    doc.setTextColor(0, 0, 0);
+    doc.text(it.texto, x + 5.5, y + 3);
+    x += 5.5 + doc.getTextWidth(it.texto) + 7;
+  });
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+}
+
 function formatarValidadesExibicao(d){
   // Quando o produto tem mais de um lote com validades diferentes, mostra
   // todas (separadas por vírgula) em vez de só a mais antiga — senão dava
@@ -1405,6 +1430,7 @@ document.getElementById('btn-relatorio-validades').addEventListener('click', asy
     doc.text(
       `Vencidos: ${contagem.vencido}   |   Vencem em ${anoAtual}: ${contagem.esteAno}   |   Vencem em ${anoAtual + 1}: ${contagem.proximoAno}`,
       14, 36);
+    desenharLegendaCores(doc, 40);
 
     // monta o corpo: uma linha de título por loja + as linhas dos lotes
     const corpo = [];
@@ -1432,7 +1458,7 @@ document.getElementById('btn-relatorio-validades').addEventListener('click', asy
     });
 
     doc.autoTable({
-      startY: 41,
+      startY: 47,
       head: [['Produto', 'Un', 'Qtd', 'Validade', 'Contado em']],
       body: corpo,
       styles: { fontSize: 8.5, cellPadding: 2.2 },
@@ -1560,7 +1586,8 @@ document.getElementById('btn-pdf').addEventListener('click', async () => {
 
     // --- tabela --- (produtos com mais de um lote aparecem em linhas
     // separadas, uma por validade, sem afetar os totais do resumo acima)
-    desenharTabelaSituacao(doc, explodirPorLote(dados), 41);
+    desenharLegendaCores(doc, 40);
+    desenharTabelaSituacao(doc, explodirPorLote(dados), 47);
 
     const nomeArquivo = `conferencia_${empresa.replace(/\s+/g,'_')}_${dataFormatada.replace(/\//g,'-')}.pdf`;
 
