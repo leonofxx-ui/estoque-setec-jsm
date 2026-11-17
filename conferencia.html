@@ -1339,7 +1339,7 @@ async function buscarTodasConferencias(aoProgredir){
   for (let ini = 0; ini < maxPaginas; ini += paralelas){
     const paginas = [];
     for (let i = ini; i < ini + paralelas; i++){
-      const url = `${SUPABASE_URL}/rest/v1/conferencias?select=loja,empresa,produto,unidade,quantidade_contada,validade,lotes,criado_em&order=criado_em.desc&limit=${tamanho}&offset=${i * tamanho}`;
+      const url = `${SUPABASE_URL}/rest/v1/conferencias?select=loja,empresa,produto,unidade,quantidade_sistema,quantidade_contada,validade,lotes,criado_em&order=criado_em.desc&limit=${tamanho}&offset=${i * tamanho}`;
       paginas.push(fetch(url, { headers: headers() }).then(async r => {
         if (!r.ok) throw new Error(await r.text());
         return r.json();
@@ -1357,6 +1357,30 @@ async function buscarTodasConferencias(aoProgredir){
   return todas;
 }
 
+// estoque atual de todas as lojas (só o que tem saldo no sistema hoje)
+async function buscarEstoqueAtualTodasLojas(){
+  const tamanho = 1000, paralelas = 4, maxPaginas = 40;
+  const todos = [];
+  for (let ini = 0; ini < maxPaginas; ini += paralelas){
+    const paginas = [];
+    for (let i = ini; i < ini + paralelas; i++){
+      const url = `${SUPABASE_URL}/rest/v1/estoque_fisico?select=loja,produto,quantidade&order=loja,produto&limit=${tamanho}&offset=${i * tamanho}`;
+      paginas.push(fetch(url, { headers: headers() }).then(async r => {
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+      }));
+    }
+    const resultados = await Promise.all(paginas);
+    let acabou = false;
+    resultados.forEach(lote => {
+      todos.push(...lote);
+      if (lote.length < tamanho) acabou = true;
+    });
+    if (acabou) break;
+  }
+  return todos;
+}
+
 document.getElementById('btn-relatorio-validades').addEventListener('click', async () => {
   const btn = document.getElementById('btn-relatorio-validades');
   const textoOriginal = '🌎 Validades de todas as filiais (PDF)';
@@ -1364,7 +1388,10 @@ document.getElementById('btn-relatorio-validades').addEventListener('click', asy
   btn.textContent = 'Gerando PDF...';
 
   try {
-    const todas = await buscarTodasConferencias(n => { btn.textContent = `Buscando contagens... (${n})`; });
+    const [todas, estoqueAtual] = await Promise.all([
+      buscarTodasConferencias(n => { btn.textContent = `Buscando contagens... (${n})`; }),
+      buscarEstoqueAtualTodasLojas(),
+    ]);
     btn.textContent = 'Montando PDF...';
 
     // fica só com a contagem MAIS RECENTE de cada produto em cada loja
@@ -1386,9 +1413,23 @@ document.getElementById('btn-relatorio-validades').addEventListener('click', asy
     hojeZerado.setHours(0, 0, 0, 0);
     const anoAtual = hojeZerado.getFullYear();
 
+    // só entram produtos que AINDA têm saldo no sistema na loja, ou que foram
+    // contados como "fora do sistema" (sistema = 0, mas existe fisicamente).
+    // Produto que tinha saldo na contagem e depois zerou no sistema (vendido
+    // ou baixado) não aparece mais.
+    const chaveEstoque = (nome) => chaveProduto(nomeBaseProduto(nome));
+    const comSaldo = new Set();
+    estoqueAtual.forEach(e => {
+      if (Number(e.quantidade) > 0) comSaldo.add(`${e.loja}||${chaveEstoque(e.produto)}`);
+    });
+    const aindaExiste = (d) =>
+      Number(d.quantidade_sistema) === 0 ||
+      comSaldo.has(`${d.loja}||${chaveEstoque(d.produto)}`);
+
     // explode em lotes e fica só com: vencidos, vencem este ano ou no ano seguinte
     const linhas = [];
     ultimas.forEach(d => {
+      if (!aindaExiste(d)) return;
       const lotesEfetivos = (Array.isArray(d.lotes) && d.lotes.length)
         ? d.lotes
         : [{ quantidade: d.quantidade_contada, validade: d.validade }];
@@ -1446,7 +1487,7 @@ document.getElementById('btn-relatorio-validades').addEventListener('click', asy
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
     doc.text(`Data: ${dataFormatada}`, 14, 19);
-    doc.text('Baseado na contagem mais recente de cada produto em cada loja', 14, 25);
+    doc.text('Contagem mais recente de cada produto (sem os que já zeraram no sistema)', 14, 25);
 
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
