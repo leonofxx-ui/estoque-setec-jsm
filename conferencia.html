@@ -113,6 +113,7 @@
   .btn-salvar:disabled{background:#9fb3ab; cursor:not-allowed; box-shadow:none;}
   .btn-whats{background:#25d366; color:#fff; box-shadow:0 4px 12px rgba(37,211,102,.3);}
   .btn-vencidos{background:var(--vermelho); color:#fff; box-shadow:0 4px 12px rgba(192,57,43,.3);}
+  .btn-validades{background:#1d4e89; color:#fff; box-shadow:0 4px 12px rgba(29,78,137,.3);}
   .btn-pdf{background:var(--dourado); color:#3a2f00; box-shadow:0 4px 12px rgba(201,162,39,.3);}
 
   .rec-item{
@@ -353,6 +354,7 @@
 
     <button class="btn-pdf" id="btn-pdf">📄 Finalizar conferência (gerar PDF)</button>
     <button class="btn-vencidos" id="btn-relatorio-vencidos" style="display:none;">⚠️ Relatório de Vencidos (gerar PDF)</button>
+    <button class="btn-validades" id="btn-relatorio-validades">🌎 Validades de todas as filiais (PDF)</button>
   </div>
 
 </div>
@@ -1294,6 +1296,166 @@ document.getElementById('btn-relatorio-vencidos').addEventListener('click', asyn
   } finally {
     btn.disabled = false;
     btn.textContent = '⚠️ Relatório de Vencidos (gerar PDF)';
+  }
+});
+
+
+// --- relatório unificado de validades (TODAS as filiais): vencidos + a vencer
+// (este ano e ano seguinte), usando a contagem mais recente de cada produto
+// em cada loja ---
+async function buscarTodasConferencias(){
+  const todas = [];
+  const tamanho = 1000;
+  for (let pagina = 0; pagina < 30; pagina++){
+    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=loja,empresa,produto,unidade,quantidade_contada,validade,lotes,criado_em&order=criado_em.desc&limit=${tamanho}&offset=${pagina * tamanho}`;
+    const resp = await fetch(url, { headers: headers() });
+    if (!resp.ok) throw new Error(await resp.text());
+    const lote = await resp.json();
+    todas.push(...lote);
+    if (lote.length < tamanho) break;
+  }
+  return todas;
+}
+
+document.getElementById('btn-relatorio-validades').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-relatorio-validades');
+  const textoOriginal = '🌎 Validades de todas as filiais (PDF)';
+  btn.disabled = true;
+  btn.textContent = 'Gerando PDF...';
+
+  try {
+    const todas = await buscarTodasConferencias();
+
+    // fica só com a contagem MAIS RECENTE de cada produto em cada loja
+    // (a lista já vem da mais nova pra mais antiga)
+    const ultimas = new Map();
+    todas.forEach(d => {
+      const chave = `${d.loja}||${d.produto}`;
+      if (!ultimas.has(chave)) ultimas.set(chave, d);
+    });
+
+    const hojeZerado = new Date();
+    hojeZerado.setHours(0, 0, 0, 0);
+    const anoAtual = hojeZerado.getFullYear();
+
+    // explode em lotes e fica só com: vencidos, vencem este ano ou no ano seguinte
+    const linhas = [];
+    ultimas.forEach(d => {
+      const lotesEfetivos = (Array.isArray(d.lotes) && d.lotes.length)
+        ? d.lotes
+        : [{ quantidade: d.quantidade_contada, validade: d.validade }];
+      lotesEfetivos.forEach(l => {
+        if (!l.validade) return;
+        const dt = new Date(l.validade + 'T00:00:00');
+        let categoria = null;
+        if (dt < hojeZerado) categoria = 'vencido';
+        else if (dt.getFullYear() === anoAtual) categoria = 'esteAno';
+        else if (dt.getFullYear() === anoAtual + 1) categoria = 'proximoAno';
+        if (!categoria) return;
+        linhas.push({
+          loja: d.loja,
+          empresa: NOMES_LOJA[d.loja] || d.empresa || d.loja,
+          produto: d.produto,
+          unidade: d.unidade || '',
+          quantidade: l.quantidade,
+          validade: l.validade,
+          contadoEm: d.criado_em,
+          categoria,
+        });
+      });
+    });
+
+    if (!linhas.length){
+      alert('Nenhum produto vencido ou a vencer encontrado nas contagens.');
+      return;
+    }
+
+    // agrupa por loja (ordem do código da loja) e, dentro da loja, validade mais urgente primeiro
+    linhas.sort((a, b) =>
+      a.loja.localeCompare(b.loja) ||
+      a.validade.localeCompare(b.validade) ||
+      a.produto.localeCompare(b.produto, 'pt-BR'));
+
+    const contagem = { vencido: 0, esteAno: 0, proximoAno: 0 };
+    linhas.forEach(l => contagem[l.categoria]++);
+
+    const CORES_VALIDADE = {
+      vencido: [192, 57, 43],
+      esteAno: [138, 109, 0],
+      proximoAno: [29, 78, 137],
+    };
+
+    const dataFormatada = new Date().toLocaleDateString('pt-BR');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    doc.setFillColor(29, 78, 137);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('Relatório de Validades - Todas as Filiais', 14, 12);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Data: ${dataFormatada}`, 14, 19);
+    doc.text('Baseado na contagem mais recente de cada produto em cada loja', 14, 25);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.text(
+      `Vencidos: ${contagem.vencido}   |   Vencem em ${anoAtual}: ${contagem.esteAno}   |   Vencem em ${anoAtual + 1}: ${contagem.proximoAno}`,
+      14, 36);
+
+    // monta o corpo: uma linha de título por loja + as linhas dos lotes
+    const corpo = [];
+    const meta = []; // acompanha cada linha do corpo: {tipo:'loja'} ou {tipo:'item', categoria}
+    let lojaAtual = null;
+    linhas.forEach(l => {
+      if (l.loja !== lojaAtual){
+        lojaAtual = l.loja;
+        const qtdLoja = linhas.filter(x => x.loja === l.loja).length;
+        corpo.push([{
+          content: `${l.empresa}  (${qtdLoja} ${qtdLoja === 1 ? 'item' : 'itens'})`,
+          colSpan: 5,
+          styles: { fillColor: [15, 61, 46], textColor: 255, fontStyle: 'bold', fontSize: 9.5 },
+        }]);
+        meta.push({ tipo: 'loja' });
+      }
+      corpo.push([
+        l.produto,
+        l.unidade,
+        formatarQtd(l.quantidade),
+        new Date(l.validade + 'T00:00:00').toLocaleDateString('pt-BR'),
+        new Date(l.contadoEm).toLocaleDateString('pt-BR'),
+      ]);
+      meta.push({ tipo: 'item', categoria: l.categoria });
+    });
+
+    doc.autoTable({
+      startY: 41,
+      head: [['Produto', 'Un', 'Qtd', 'Validade', 'Contado em']],
+      body: corpo,
+      styles: { fontSize: 8.5, cellPadding: 2.2 },
+      headStyles: { fillColor: [29, 78, 137], textColor: 255 },
+      didParseCell: (data) => {
+        if (data.section !== 'body') return;
+        const m = meta[data.row.index];
+        if (!m || m.tipo !== 'item') return;
+        if (data.column.index === 3){
+          data.cell.styles.textColor = CORES_VALIDADE[m.categoria];
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
+    });
+
+    const nomeArquivo = `validades_todas_filiais_${dataFormatada.replace(/\//g,'-')}.pdf`;
+    await gerarPdfECompartilhar(doc, nomeArquivo, `Validades - Todas as filiais - ${dataFormatada}`);
+  } catch(e){
+    alert('Erro ao gerar o PDF. Tente de novo.');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
   }
 });
 
