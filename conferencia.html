@@ -1368,10 +1368,17 @@ document.getElementById('btn-relatorio-validades').addEventListener('click', asy
     btn.textContent = 'Montando PDF...';
 
     // fica só com a contagem MAIS RECENTE de cada produto em cada loja
-    // (a lista já vem da mais nova pra mais antiga)
+    // (a lista já vem da mais nova pra mais antiga).
+    // a chave ignora traço, parênteses, espaços duplos e maiúsculas/minúsculas,
+    // pra o mesmo produto escrito de formas levemente diferentes (ex.: "...(2X100DS) ULTRA"
+    // e "...(2X100DS) - ULTRA") contar como um só — vale a contagem mais recente
+    const chaveProduto = (nome) => String(nome || '')
+      .toUpperCase()
+      .replace(/[^0-9A-ZÀ-Ü]+/g, ' ')
+      .trim();
     const ultimas = new Map();
     todas.forEach(d => {
-      const chave = `${d.loja}||${d.produto}`;
+      const chave = `${d.loja}||${chaveProduto(d.produto)}`;
       if (!ultimas.has(chave)) ultimas.set(chave, d);
     });
 
