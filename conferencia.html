@@ -1230,9 +1230,12 @@ async function gerarPdfECompartilhar(doc, nomeArquivo, tituloCompartilhar){
       doc.save(nomeArquivo);
     }
   } catch (shareErr){
-    // usuário cancelou o menu de compartilhar (AbortError) - o PDF já foi
-    // gerado certinho, então não é um erro real, só ignora
-    if (shareErr.name !== 'AbortError') console.error(shareErr);
+    // usuário cancelou o menu de compartilhar: o PDF já foi gerado, só ignora
+    if (shareErr.name === 'AbortError') return;
+    // qualquer outra falha (ex.: o celular bloqueou o compartilhamento porque
+    // a geração demorou) -> baixa o PDF direto, pra nunca ficar "sem acontecer nada"
+    console.error(shareErr);
+    doc.save(nomeArquivo);
   }
 }
 
@@ -1328,16 +1331,28 @@ document.getElementById('btn-relatorio-vencidos').addEventListener('click', asyn
 // --- relatório unificado de validades (TODAS as filiais): vencidos + a vencer
 // (este ano e ano seguinte), usando a contagem mais recente de cada produto
 // em cada loja ---
-async function buscarTodasConferencias(){
+async function buscarTodasConferencias(aoProgredir){
+  // busca as páginas de 1000 em lotes de 4 ao mesmo tempo (bem mais rápido
+  // que uma por vez); para quando alguma página vier incompleta
+  const tamanho = 1000, paralelas = 4, maxPaginas = 40;
   const todas = [];
-  const tamanho = 1000;
-  for (let pagina = 0; pagina < 30; pagina++){
-    const url = `${SUPABASE_URL}/rest/v1/conferencias?select=loja,empresa,produto,unidade,quantidade_contada,validade,lotes,criado_em&order=criado_em.desc&limit=${tamanho}&offset=${pagina * tamanho}`;
-    const resp = await fetch(url, { headers: headers() });
-    if (!resp.ok) throw new Error(await resp.text());
-    const lote = await resp.json();
-    todas.push(...lote);
-    if (lote.length < tamanho) break;
+  for (let ini = 0; ini < maxPaginas; ini += paralelas){
+    const paginas = [];
+    for (let i = ini; i < ini + paralelas; i++){
+      const url = `${SUPABASE_URL}/rest/v1/conferencias?select=loja,empresa,produto,unidade,quantidade_contada,validade,lotes,criado_em&order=criado_em.desc&limit=${tamanho}&offset=${i * tamanho}`;
+      paginas.push(fetch(url, { headers: headers() }).then(async r => {
+        if (!r.ok) throw new Error(await r.text());
+        return r.json();
+      }));
+    }
+    const resultados = await Promise.all(paginas);
+    let acabou = false;
+    resultados.forEach(lote => {
+      todas.push(...lote);
+      if (lote.length < tamanho) acabou = true;
+    });
+    if (aoProgredir) aoProgredir(todas.length);
+    if (acabou) break;
   }
   return todas;
 }
@@ -1349,7 +1364,8 @@ document.getElementById('btn-relatorio-validades').addEventListener('click', asy
   btn.textContent = 'Gerando PDF...';
 
   try {
-    const todas = await buscarTodasConferencias();
+    const todas = await buscarTodasConferencias(n => { btn.textContent = `Buscando contagens... (${n})`; });
+    btn.textContent = 'Montando PDF...';
 
     // fica só com a contagem MAIS RECENTE de cada produto em cada loja
     // (a lista já vem da mais nova pra mais antiga)
